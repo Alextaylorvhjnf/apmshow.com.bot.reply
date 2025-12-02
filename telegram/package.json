@@ -1,20 +1,15 @@
 {
   "name": "ai-chat-telegram-bot",
   "version": "1.0.0",
-  "description": "Telegram bot for human support bridge",
+  "description": "Telegram bot for AI Chat Bridge",
   "main": "bot.js",
   "scripts": {
-    "start": "node bot.js",
-    "dev": "nodemon bot.js"
+    "start": "node bot.js"
   },
   "dependencies": {
     "telegraf": "^4.16.3",
     "axios": "^1.6.2",
-    "express": "^4.18.2",
     "dotenv": "^16.3.1"
-  },
-  "devDependencies": {
-    "nodemon": "^3.0.1"
   },
   "engines": {
     "node": ">=16.0.0"
