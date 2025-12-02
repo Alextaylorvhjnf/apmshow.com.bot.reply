@@ -1,0 +1,374 @@
+/* استایل ویجت چت */
+.ai-chat-widget-container {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    direction: rtl;
+}
+
+/* دکمه باز کردن/بستن چت */
+.ai-chat-toggle {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #007bff, #0056b3);
+    color: white;
+    border: none;
+    cursor: pointer;
+    font-size: 24px;
+    box-shadow: 0 4px 15px rgba(0, 123, 255, 0.3);
+    z-index: 9999;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.ai-chat-toggle:hover {
+    transform: scale(1.1);
+    box-shadow: 0 6px 20px rgba(0, 123, 255, 0.4);
+}
+
+.ai-chat-toggle.active {
+    transform: rotate(90deg);
+}
+
+/* پنجره چت */
+.ai-chat-window {
+    position: fixed;
+    bottom: 90px;
+    left: 20px;
+    width: 350px;
+    height: 500px;
+    background: white;
+    border-radius: 15px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+    display: flex;
+    flex-direction: column;
+    z-index: 9998;
+    overflow: hidden;
+    border: 1px solid #e0e0e0;
+}
+
+.ai-chat-window.hidden {
+    display: none;
+}
+
+/* هدر چت */
+.ai-chat-header {
+    background: linear-gradient(135deg, #007bff, #0056b3);
+    color: white;
+    padding: 15px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.ai-chat-title {
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.ai-chat-status {
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.ai-chat-status::before {
+    content: '';
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+.ai-chat-status-connected::before {
+    background-color: #28a745;
+}
+
+.ai-chat-status-connecting::before {
+    background-color: #ffc107;
+    animation: pulse 1.5s infinite;
+}
+
+.ai-chat-status-disconnected::before {
+    background-color: #dc3545;
+}
+
+.ai-chat-status-human::before {
+    background-color: #17a2b8;
+}
+
+.ai-chat-close {
+    background: none;
+    border: none;
+    color: white;
+    font-size: 24px;
+    cursor: pointer;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: background-color 0.2s;
+}
+
+.ai-chat-close:hover {
+    background-color: rgba(255, 255, 255, 0.2);
+}
+
+/* بدنه چت */
+.ai-chat-body {
+    flex: 1;
+    padding: 15px;
+    overflow-y: auto;
+    background-color: #f8f9fa;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+/* پیام‌ها */
+.ai-chat-message {
+    max-width: 85%;
+    padding: 10px 15px;
+    border-radius: 15px;
+    position: relative;
+    animation: fadeIn 0.3s ease;
+}
+
+.ai-chat-message-user {
+    background: linear-gradient(135deg, #007bff, #0056b3);
+    color: white;
+    align-self: flex-end;
+    border-bottom-right-radius: 5px;
+}
+
+.ai-chat-message-ai {
+    background: white;
+    color: #333;
+    align-self: flex-start;
+    border: 1px solid #e0e0e0;
+    border-bottom-left-radius: 5px;
+}
+
+.ai-chat-message-admin {
+    background: linear-gradient(135deg, #28a745, #1e7e34);
+    color: white;
+    align-self: flex-start;
+    border-bottom-left-radius: 5px;
+}
+
+.ai-chat-message-system {
+    background: #f8f9fa;
+    color: #6c757d;
+    align-self: center;
+    font-size: 12px;
+    border: 1px dashed #dee2e6;
+}
+
+.ai-chat-message-error {
+    background: linear-gradient(135deg, #dc3545, #bd2130);
+    color: white;
+}
+
+.ai-chat-message-header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 5px;
+    font-size: 11px;
+    opacity: 0.8;
+}
+
+.ai-chat-message-content {
+    font-size: 14px;
+    line-height: 1.5;
+    word-wrap: break-word;
+}
+
+/* فوتر چت */
+.ai-chat-footer {
+    padding: 15px;
+    background: white;
+    border-top: 1px solid #e0e0e0;
+}
+
+.ai-chat-input-container {
+    display: flex;
+    gap: 10px;
+}
+
+.ai-chat-input {
+    flex: 1;
+    padding: 10px 15px;
+    border: 1px solid #ddd;
+    border-radius: 25px;
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.3s;
+}
+
+.ai-chat-input:focus {
+    border-color: #007bff;
+}
+
+.ai-chat-send-btn {
+    width: 45px;
+    height: 45px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #007bff, #0056b3);
+    color: white;
+    border: none;
+    cursor: pointer;
+    font-size: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease;
+}
+
+.ai-chat-send-btn:hover:not(:disabled) {
+    transform: scale(1.05);
+}
+
+.ai-chat-send-btn:disabled {
+    background: #6c757d;
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+/* نشانگر تایپ */
+.ai-chat-typing {
+    margin-top: 10px;
+    font-size: 12px;
+    color: #6c757d;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.ai-chat-typing.hidden {
+    display: none;
+}
+
+.typing-dots {
+    display: flex;
+    gap: 3px;
+}
+
+.typing-dots span {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: #6c757d;
+    animation: typing 1.4s infinite;
+}
+
+.typing-dots span:nth-child(2) {
+    animation-delay: 0.2s;
+}
+
+.typing-dots span:nth-child(3) {
+    animation-delay: 0.4s;
+}
+
+/* دکمه اتصال به اپراتور انسانی */
+.ai-chat-human-support {
+    background: white;
+    border: 1px solid #007bff;
+    border-radius: 10px;
+    padding: 15px;
+    margin-top: 10px;
+    text-align: center;
+}
+
+.ai-chat-human-support-message {
+    font-size: 14px;
+    color: #333;
+    margin-bottom: 10px;
+}
+
+.ai-chat-human-support-btn {
+    background: linear-gradient(135deg, #28a745, #1e7e34);
+    color: white;
+    border: none;
+    padding: 8px 20px;
+    border-radius: 20px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: all 0.3s ease;
+}
+
+.ai-chat-human-support-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 10px rgba(40, 167, 69, 0.3);
+}
+
+/* انیمیشن‌ها */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.5;
+    }
+}
+
+@keyframes typing {
+    0%, 60%, 100% {
+        transform: translateY(0);
+    }
+    30% {
+        transform: translateY(-5px);
+    }
+}
+
+/* اسکرول بار */
+.ai-chat-body::-webkit-scrollbar {
+    width: 6px;
+}
+
+.ai-chat-body::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 3px;
+}
+
+.ai-chat-body::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 3px;
+}
+
+.ai-chat-body::-webkit-scrollbar-thumb:hover {
+    background: #a8a8a8;
+}
+
+/* ریسپانسیو */
+@media (max-width: 480px) {
+    .ai-chat-window {
+        width: calc(100vw - 40px);
+        height: 70vh;
+        bottom: 80px;
+        left: 10px;
+        right: 10px;
+    }
+    
+    .ai-chat-toggle {
+        left: 10px;
+        bottom: 10px;
+    }
+}
