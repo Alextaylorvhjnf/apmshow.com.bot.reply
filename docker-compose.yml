@@ -1,10 +1,8 @@
 version: '3.8'
 
 services:
-  backend:
-    image: node:18-alpine
-    container_name: ai-chat-backend
-    working_dir: /app
+  chatbot:
+    build: .
     ports:
       - "3000:3000"
     environment:
@@ -15,34 +13,18 @@ services:
       - ADMIN_TELEGRAM_ID=${ADMIN_TELEGRAM_ID}
     env_file:
       - .env
-    volumes:
-      - ./backend:/app
-      - /app/node_modules
-    command: sh -c "npm install && node server.js"
     restart: unless-stopped
-    networks:
-      - chat-network
-
-  telegram-bot:
-    image: node:18-alpine
-    container_name: ai-chat-telegram
-    working_dir: /app
-    environment:
-      - NODE_ENV=production
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      - ADMIN_TELEGRAM_ID=${ADMIN_TELEGRAM_ID}
-    env_file:
-      - .env
+    healthcheck:
+      test: ["CMD", "node", "-e", "const http = require('http'); const req = http.get('http://localhost:3000/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1); }); req.on('error', () => process.exit(1));"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     volumes:
-      - ./telegram:/app
-      - /app/node_modules
-    command: sh -c "npm install && node bot.js"
-    depends_on:
-      - backend
-    restart: unless-stopped
+      - ./logs:/app/logs
     networks:
-      - chat-network
+      - chatbot-network
 
 networks:
-  chat-network:
+  chatbot-network:
     driver: bridge
