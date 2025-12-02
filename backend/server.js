@@ -5,6 +5,7 @@ const WebSocket = require('ws');
 const axios = require('axios');
 const cors = require('cors');
 const path = require('path');
+const { Telegraf } = require('telegraf');
 
 const app = express();
 const server = http.createServer(app);
@@ -23,30 +24,44 @@ console.log('👤 Admin ID:', ADMIN_TELEGRAM_ID);
 // Middleware
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname, '../frontend')));
+app.use(express.static('public'));
 
-// ذخیره‌سازی session‌ها
-const sessions = new Map();
-const userConnections = new Map();
-const adminConnections = new Map();
+// WebSocket
+const connections = new Map();
 
-// تابع برای ارسال به تلگرام
-async function sendToTelegram(chatId, message) {
-    try {
-        await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-            chat_id: chatId,
-            text: message,
-            parse_mode: 'HTML'
-        });
-        return true;
-    } catch (error) {
-        console.error('Telegram Error:', error.message);
-        return false;
-    }
-}
+wss.on('connection', (ws) => {
+    const userId = 'user_' + Date.now();
+    connections.set(userId, ws);
+    
+    ws.send(JSON.stringify({
+        type: 'welcome',
+        message: 'سلام! به چت بات خوش آمدید. 🤖'
+    }));
+    
+    ws.on('message', async (data) => {
+        try {
+            const message = JSON.parse(data);
+            
+            if (message.type === 'chat') {
+                const response = await callGroqAPI(message.text);
+                
+                ws.send(JSON.stringify({
+                    type: 'response',
+                    message: response
+                }));
+            }
+        } catch (error) {
+            console.error('WebSocket error:', error);
+        }
+    });
+    
+    ws.on('close', () => {
+        connections.delete(userId);
+    });
+});
 
-// پردازش با هوش مصنوعی
-async function processWithAI(message) {
+// تابع برای فراخوانی Groq API
+async function callGroqAPI(message) {
     try {
         const response = await axios.post(
             'https://api.groq.com/openai/v1/chat/completions',
@@ -55,7 +70,7 @@ async function processWithAI(message) {
                 messages: [
                     {
                         role: "system",
-                        content: "You are a helpful Persian assistant. Keep responses concise and friendly."
+                        content: "You are a helpful Persian assistant."
                     },
                     {
                         role: "user",
@@ -72,88 +87,47 @@ async function processWithAI(message) {
                 }
             }
         );
-
-        return {
-            success: true,
-            message: response.data.choices[0].message.content,
-            requiresHuman: false
-        };
+        
+        return response.data.choices[0].message.content;
     } catch (error) {
         console.error('Groq API Error:', error.message);
-        return {
-            success: false,
-            message: "متأسفم، در حال حاضر نمی‌تونم پاسخ بدم. آیا می‌خواهید با اپراتور انسانی صحبت کنید؟",
-            requiresHuman: true
-        };
+        return "متأسفم، در حال حاضر نمی‌تونم پاسخ بدم.";
     }
 }
 
-// WebSocket connection handler
-wss.on('connection', (ws) => {
-    const userId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    console.log(`New WebSocket connection: ${userId}`);
+// راه‌اندازی ربات تلگرام
+let bot = null;
+try {
+    bot = new Telegraf(TELEGRAM_BOT_TOKEN);
     
-    userConnections.set(userId, ws);
-    
-    ws.send(JSON.stringify({
-        type: 'connection',
-        userId: userId,
-        message: 'سلام! به چت بات خوش آمدید. 🤖'
-    }));
-    
-    ws.on('message', async (data) => {
-        try {
-            const message = JSON.parse(data);
-            
-            if (message.type === 'message') {
-                const aiResponse = await processWithAI(message.content);
-                
-                if (aiResponse.requiresHuman) {
-                    ws.send(JSON.stringify({
-                        type: 'ai_response',
-                        message: aiResponse.message,
-                        requiresHuman: true,
-                        sessionId: message.sessionId
-                    }));
-                } else {
-                    ws.send(JSON.stringify({
-                        type: 'ai_response',
-                        message: aiResponse.message,
-                        requiresHuman: false,
-                        sessionId: message.sessionId
-                    }));
-                }
-            }
-            
-            if (message.type === 'connect_to_human') {
-                // اطلاع به تلگرام
-                await sendToTelegram(ADMIN_TELEGRAM_ID, 
-                    `🔔 درخواست پشتیبانی انسانی!\n\n` +
-                    `User ID: ${userId}\n` +
-                    `Session: ${message.sessionId}\n` +
-                    `Time: ${new Date().toLocaleTimeString('fa-IR')}`
-                );
-                
-                ws.send(JSON.stringify({
-                    type: 'human_connected',
-                    message: 'به اپراتور انسانی متصل شدید. لطفاً پیام خود را ارسال کنید.',
-                    sessionId: message.sessionId
-                }));
-            }
-        } catch (error) {
-            console.error('WebSocket message error:', error);
+    bot.start((ctx) => {
+        const userId = ctx.from.id.toString();
+        
+        if (userId === ADMIN_TELEGRAM_ID) {
+            ctx.reply('👨‍💼 سلام ادمین! ربات پشتیبانی فعال است.');
+        } else {
+            ctx.reply('🤖 سلام! این ربات برای پشتیبانی از کاربران سایت است.');
         }
     });
     
-    ws.on('close', () => {
-        console.log(`WebSocket closed: ${userId}`);
-        userConnections.delete(userId);
+    bot.on('text', (ctx) => {
+        const userId = ctx.from.id.toString();
+        
+        if (userId === ADMIN_TELEGRAM_ID) {
+            ctx.reply('پیام شما دریافت شد. در نسخه کامل به کاربران ارسال می‌شود.');
+        }
     });
-});
+    
+    bot.launch().then(() => {
+        console.log('✅ Telegram bot started successfully!');
+    });
+} catch (error) {
+    console.error('❌ Telegram bot error:', error.message);
+}
 
-// API Routes
+// Routes
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, '../frontend/example.html'));
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 app.get('/health', (req, res) => {
@@ -169,45 +143,31 @@ app.get('/health', (req, res) => {
 });
 
 app.get('/widget.js', (req, res) => {
-    res.sendFile(path.join(__dirname, '../frontend/chat-widget.js'));
+    res.sendFile(path.join(__dirname, 'public', 'widget.js'));
 });
 
 app.get('/widget.css', (req, res) => {
-    res.sendFile(path.join(__dirname, '../frontend/chat-widget.css'));
+    res.sendFile(path.join(__dirname, 'public', 'widget.css'));
 });
 
-app.post('/api/send-message', async (req, res) => {
+app.post('/api/chat', async (req, res) => {
     try {
         const { message } = req.body;
         
-        const aiResponse = await processWithAI(message);
+        if (!message) {
+            return res.status(400).json({ error: 'Message is required' });
+        }
+        
+        const response = await callGroqAPI(message);
         
         res.json({
             success: true,
-            response: aiResponse.message,
-            requiresHuman: aiResponse.requiresHuman
+            response: response
         });
     } catch (error) {
         res.status(500).json({
             success: false,
             error: 'Internal server error'
-        });
-    }
-});
-
-app.post('/api/telegram-webhook', async (req, res) => {
-    try {
-        const { sessionId, message } = req.body;
-        
-        // اینجا می‌توانید session را پیدا کرده و به کاربر پیام بفرستید
-        res.json({
-            success: true,
-            message: 'Message received'
-        });
-    } catch (error) {
-        res.status(500).json({
-            success: false,
-            error: 'Server error'
         });
     }
 });
