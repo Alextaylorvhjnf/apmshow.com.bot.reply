@@ -1,0 +1,35 @@
+{
+  "build": {
+    "builder": "NIXPACKS",
+    "buildCommand": "cd backend && npm install"
+  },
+  "deploy": {
+    "startCommand": "cd backend && node server.js",
+    "healthcheckPath": "/",
+    "healthcheckTimeout": 30
+  },
+  "env": {
+    "GROQ_API_KEY": {
+      "description": "API Key برای Groq",
+      "required": true
+    },
+    "TELEGRAM_BOT_TOKEN": {
+      "description": "توکن ربات تلگرام",
+      "required": true
+    },
+    "ADMIN_TELEGRAM_ID": {
+      "description": "آیدی تلگرام ادمین",
+      "required": true
+    },
+    "PORT": {
+      "description": "پورت سرور",
+      "value": "3000",
+      "required": false
+    },
+    "NODE_ENV": {
+      "description": "محیط اجرا",
+      "value": "production",
+      "required": false
+    }
+  }
+}
