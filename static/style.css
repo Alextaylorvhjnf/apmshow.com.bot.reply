@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>چت‌بات آنلاین</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="main-container">
+        <header class="site-header">
+            <h1><i class="fas fa-comments"></i> چت‌بات آنلاین فروشگاه</h1>
+            <p>پشتیبانی 24 ساعته | پاسخگویی سریع</p>
+        </header>
+
+        <main class="content">
+            <div class="chat-demo">
+                <h2><i class="fas fa-robot"></i> پیش‌نمایش چت‌بات</h2>
+                <div class="chat-preview">
+                    <div class="message-preview user">
+                        <div class="avatar"><i class="fas fa-user"></i></div>
+                        <div class="text">سلام! چطور می‌تونم کمک کنم؟</div>
+                    </div>
+                    <div class="message-preview bot">
+                        <div class="avatar"><i class="fas fa-robot"></i></div>
+                        <div class="text">سلام! به چت‌بات آنلاین خوش آمدید. برای شروع گفتگو، روی آیکون پایین سمت چپ کلیک کنید.</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="features">
+                <h2><i class="fas fa-star"></i> ویژگی‌های چت‌بات</h2>
+                <div class="feature-grid">
+                    <div class="feature">
+                        <i class="fas fa-bolt"></i>
+                        <h3>پاسخ‌دهی سریع</h3>
+                        <p>پاسخ به سوالات در کمتر از 5 ثانیه</p>
+                    </div>
+                    <div class="feature">
+                        <i class="fas fa-clock"></i>
+                        <h3>24/7 فعال</h3>
+                        <p>در هر ساعت از شبانه‌روز پاسخگو</p>
+                    </div>
+                    <div class="feature">
+                        <i class="fas fa-shopping-cart"></i>
+                        <h3>پشتیبانی فروش</h3>
+                        <p>راهنمایی برای خرید و سایز</p>
+                    </div>
+                    <div class="feature">
+                        <i class="fas fa-shipping-fast"></i>
+                        <h3>پیگیری سفارش</h3>
+                        <p>اطلاع از وضعیت ارسال سفارش</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="instructions">
+                <h2><i class="fas fa-question-circle"></i> سوالات متداول</h2>
+                <div class="faq-list" id="faq-list">
+                    <!-- FAQها با JavaScript لود می‌شوند -->
+                </div>
+            </div>
+        </main>
+
+        <footer class="site-footer">
+            <p>© 2023 چت‌بات آنلاین فروشگاه | قدرت گرفته از Railway</p>
+        </footer>
+    </div>
+
+    <!-- ویجت چت -->
+    <div id="chatbot-widget"></div>
+
+    <!-- اسکریپت‌ها -->
+    <script src="widget.js"></script>
+    <script>
+        // لود FAQها از API
+        fetch('/api/faq')
+            .then(response => response.json())
+            .then(faqs => {
+                const faqList = document.getElementById('faq-list');
+                faqList.innerHTML = '';
+                
+                // نمایش 5 FAQ اول
+                faqs.slice(0, 5).forEach((faq, index) => {
+                    const faqItem = document.createElement('div');
+                    faqItem.className = 'faq-item';
+                    faqItem.innerHTML = `
+                        <h4>${index + 1}. ${faq.question}</h4>
+                        <p>${faq.answer.substring(0, 100)}...</p>
+                    `;
+                    faqList.appendChild(faqItem);
+                });
+            })
+            .catch(error => {
+                console.error('Error loading FAQ:', error);
+                document.getElementById('faq-list').innerHTML = 
+                    '<p>در حال بارگذاری سوالات متداول...</p>';
+            });
+    </script>
+</body>
+</html>
