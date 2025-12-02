@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - GROQ_API_KEY=${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}
+      - TELEGRAM_BOT_TOKEN=${8200429613:AAGTgP5hnOiRIxXc3YJmxvTqwEqhQ4crGkk}
+      - ADMIN_TELEGRAM_ID=${7321524568}
+      - RAILWAY_STATIC_URL=${web-production-4063.up.railway.app}
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    restart: unless-stopped
+    networks:
+      - chat-network
+
+  telegram-bot:
+    build: ./telegram
+    environment:
+      - NODE_ENV=production
+      - TELEGRAM_BOT_TOKEN=${8200429613:AAGTgP5hnOiRIxXc3YJmxvTqwEqhQ4crGkk}
+      - ADMIN_TELEGRAM_ID=${7321524568}
+      - BACKEND_URL=http://backend:3000
+      - TELEGRAM_BOT_PORT=3001
+    volumes:
+      - ./telegram:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - chat-network
+
+networks:
+  chat-network:
+    driver: bridge
