@@ -10,7 +10,7 @@ const NodeCache = require('node-cache');
 require('dotenv').config();
 
 console.log('='.repeat(60));
-console.log('🚀 AI CHATBOT WITH TELEGRAM SUPPORT - SYNCED VERSION');
+console.log('🚀 AI CHATBOT WITH TELEGRAM SUPPORT - FIXED VERSION');
 console.log('='.repeat(60));
 
 const PORT = process.env.PORT || 3000;
@@ -511,7 +511,7 @@ app.post('/api/connect-human', async (req, res) => {
       res.json({
         success: true,
         message: '✅ درخواست شما به اپراتور ارسال شد. منتظر پذیرش باشید...',
-        operatorConnected: false,
+        operatorConnected: false, // Not yet connected
         pending: true
       });
     } else {
@@ -532,31 +532,23 @@ app.post('/api/connect-human', async (req, res) => {
   }
 });
 
-// Webhook endpoint for receiving events from Telegram bot
+// این endpoint باید دقیقاً با endpoint بات تلگرام هماهنگ باشد
 app.post('/webhook', async (req, res) => {
   try {
     const { event, data } = req.body;
-    console.log(`📨 Webhook from Telegram bot: ${event}`, data);
+    console.log(`📨 Webhook from bot: ${event}`, data);
     
     switch (event) {
       case 'operator_accepted':
         // Connect session to operator
-        const session = sessionManager.connectToHuman(
-          data.sessionId, 
-          data.operatorId, 
-          data.operatorName
-        );
+        sessionManager.connectToHuman(data.sessionId, data.operatorId, data.operatorName);
         
-        if (session) {
-          // Notify user via WebSocket
-          io.to(data.sessionId).emit('operator-accepted', {
-            message: '✅ اپراتور درخواست شما را پذیرفت! می‌توانید گفتگو را شروع کنید.',
-            operatorName: data.operatorName || 'اپراتور',
-            timestamp: new Date().toISOString()
-          });
-          
-          console.log(`✅ Operator ${data.operatorName} accepted session ${data.sessionId.substring(0, 8)}...`);
-        }
+        // Notify user via WebSocket
+        io.to(data.sessionId).emit('operator-connected', {
+          message: '✅ اپراتور درخواست شما را پذیرفت! می‌توانید گفتگو را شروع کنید.',
+          operatorName: data.operatorName,
+          timestamp: new Date().toISOString()
+        });
         break;
         
       case 'operator_rejected':
@@ -565,63 +557,27 @@ app.post('/webhook', async (req, res) => {
           message: '❌ متأسفانه اپراتور در حال حاضر مشغول است. لطفاً بعداً تلاش کنید یا سوال خود را از هوش مصنوعی بپرسید.',
           timestamp: new Date().toISOString()
         });
-        console.log(`❌ Operator rejected session ${data.sessionId.substring(0, 8)}...`);
         break;
         
-      case 'operator_message':
-        // Message from operator to user
-        console.log(`📤 Operator message for session ${data.sessionId.substring(0, 8)}...`);
-        
-        // Get session
-        const targetSession = sessionManager.getSession(data.sessionId);
-        if (targetSession) {
-          // Add operator message to session
-          sessionManager.addMessage(data.sessionId, 'operator', data.message);
-          
-          // Send to user via WebSocket
-          io.to(data.sessionId).emit('operator-message', {
-            from: 'operator',
-            message: data.message,
-            timestamp: new Date().toISOString(),
-            operatorName: data.operatorName || 'اپراتور',
-            sessionId: data.sessionId
-          });
-          
-          console.log(`✅ Operator message sent to user in session ${data.sessionId.substring(0, 8)}...`);
-        }
-        break;
-        
-      case 'session_ended':
-        // Session ended
-        const endedSession = sessionManager.getSession(data.sessionId);
-        
-        if (endedSession && endedSession.operatorChatId) {
-          io.to(data.sessionId).emit('session-ended', {
-            message: '📭 جلسه به پایان رسید',
-            timestamp: new Date().toISOString()
-          });
-          
-          // Cleanup
-          sessionManager.disconnectFromHuman(data.sessionId);
-        }
+      case 'operator_message_sent':
+        console.log(`✅ Operator ${data.operatorId} sent message for session ${data.sessionId}`);
         break;
         
       default:
-        console.log(`⚠️ Unknown event from Telegram bot: ${event}`);
+        console.log(`⚠️ Unknown event: ${event}`);
     }
     
     res.json({ success: true });
     
   } catch (error) {
     console.error('❌ Webhook error:', error);
-    res.status(500).json({ success: false, error: error.message });
+    res.json({ success: false, error: error.message });
   }
 });
 
-// Endpoint for sending messages from user to operator
-app.post('/api/send-to-operator', async (req, res) => {
+app.post('/api/send-to-user', async (req, res) => {
   try {
-    const { sessionId, message } = req.body;
+    const { sessionId, message, operatorId, operatorName } = req.body;
     
     if (!sessionId || !message) {
       return res.status(400).json({ 
@@ -630,7 +586,7 @@ app.post('/api/send-to-operator', async (req, res) => {
       });
     }
     
-    console.log(`📤 Send to operator: ${sessionId.substring(0, 8)}...`);
+    console.log(`📤 Send to user: ${sessionId.substring(0, 8)}... from ${operatorName || 'اپراتور'}`);
     
     // Get session
     const session = sessionManager.getSession(sessionId);
@@ -641,38 +597,26 @@ app.post('/api/send-to-operator', async (req, res) => {
       });
     }
     
-    // Check if connected to human operator
-    if (!session.connectedToHuman) {
-      return res.json({
-        success: false,
-        error: 'هنوز به اپراتور متصل نیستید'
-      });
-    }
+    // Add operator message
+    sessionManager.addMessage(sessionId, 'operator', message);
     
-    // Add user message
-    sessionManager.addMessage(sessionId, 'user', message);
+    // Send to user via WebSocket
+    io.to(sessionId).emit('operator-message', {
+      from: 'operator',
+      message: message,
+      timestamp: new Date().toISOString(),
+      operatorName: operatorName || 'اپراتور',
+      sessionId: sessionId
+    });
     
-    // Send to Telegram bot
-    const telegramResult = await telegramService.sendToOperator(
-      sessionId,
-      message,
-      session.userInfo
-    );
-    
-    if (telegramResult.success) {
-      res.json({
-        success: true,
-        message: 'پیام ارسال شد'
-      });
-    } else {
-      res.json({
-        success: false,
-        error: telegramResult.error || 'خطا در ارسال پیام به اپراتور'
-      });
-    }
+    res.json({
+      success: true,
+      userName: session.userInfo?.name || 'کاربر سایت',
+      sessionId: sessionId
+    });
     
   } catch (error) {
-    console.error('❌ Send to operator error:', error);
+    console.error('❌ Send to user error:', error);
     res.json({
       success: false,
       error: 'خطا در ارسال پیام'
