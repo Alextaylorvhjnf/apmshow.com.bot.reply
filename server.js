@@ -15,7 +15,7 @@ console.log('='.repeat(60));
 
 const PORT = process.env.PORT || 3000;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
-const TELEGRAM_BOT_URL = process.env.TELEGRAM_BOT_URL || 'http://localhost:3001';
+const TELEGRAM_BOT_URL = process.env.TELEGRAM_BOT_URL || 'http://localhost:3000';
 
 console.log('📌 Port:', PORT);
 console.log('🤖 AI:', GROQ_API_KEY ? '✅ ENABLED' : '❌ DISABLED');
