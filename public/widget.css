@@ -253,14 +253,15 @@
 }
 
 .chat-logo::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: url('https://shikpooshaan.ir/Navigator_The%20Teamwork%20Assistant.jpeg') center/cover;
-    border-radius: 14px;
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  /* اصلاح آدرس لوگو */
+  background: url('https://shikpooshaan.ir/Navigator_The_Teamwork_Assistant.jpeg') center/cover;
+  border-radius: 14px;
 }
 
 .chat-logo i {
