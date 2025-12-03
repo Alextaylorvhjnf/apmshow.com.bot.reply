@@ -3,7 +3,7 @@ const axios = require('axios');
 require('dotenv').config();
 
 console.log('='.repeat(60));
-console.log('🤖 TELEGRAM BOT - SYNCED VERSION');
+console.log('🤖 TELEGRAM BOT - FIXED CALLBACK VERSION');
 console.log('='.repeat(60));
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -29,7 +29,7 @@ const bot = new Telegraf(TELEGRAM_BOT_TOKEN);
 
 // Helper: Generate short session ID
 function generateShortId(sessionId) {
-  return sessionId.substring(0, 12);
+  return sessionId.substring(0, 12); // Use first 12 chars
 }
 
 // Helper: Store session
@@ -82,7 +82,7 @@ bot.command('sessions', async (ctx) => {
     let message = `📊 *جلسات فعال (${sessionsList.length}):*\n\n`;
     
     sessionsList.forEach((session, index) => {
-      const shortId = session.shortId || generateShortId(session.id);
+      const shortId = generateShortId(session.id);
       const duration = Math.floor((new Date() - new Date(session.createdAt)) / (1000 * 60));
       
       message += `*${index + 1}. جلسه:* \`${shortId}\`\n`;
@@ -135,7 +135,7 @@ async function handleNewUserSession(sessionId, userInfo, userMessage) {
   }
 }
 
-// Handle accept callback
+// Handle accept callback - FIXED
 bot.action(/accept_(.+)/, async (ctx) => {
   try {
     const shortId = ctx.match[1];
@@ -164,12 +164,12 @@ bot.action(/accept_(.+)/, async (ctx) => {
       ctx.callbackQuery.message.text + '\n\n✅ *شما این گفتگو را قبول کردید*\n\n💬 اکنون می‌توانید پیام بفرستید.',
       { 
         parse_mode: 'Markdown',
-        ...Markup.inlineKeyboard([])
+        ...Markup.inlineKeyboard([]) // Remove buttons
       }
     );
     
     // Notify backend
-    await axios.post(`${BACKEND_URL}/webhook`, {
+    await axios.post(`${BACKEND_URL}/api/telegram-event`, {
       event: 'operator_accepted',
       data: { 
         sessionId: fullSessionId,
@@ -186,7 +186,7 @@ bot.action(/accept_(.+)/, async (ctx) => {
   }
 });
 
-// Handle reject callback
+// Handle reject callback - FIXED
 bot.action(/reject_(.+)/, async (ctx) => {
   try {
     const shortId = ctx.match[1];
@@ -212,7 +212,7 @@ bot.action(/reject_(.+)/, async (ctx) => {
     );
     
     // Notify backend
-    await axios.post(`${BACKEND_URL}/webhook`, {
+    await axios.post(`${BACKEND_URL}/api/telegram-event`, {
       event: 'operator_rejected',
       data: { sessionId: fullSessionId }
     });
@@ -251,25 +251,27 @@ bot.on('text', async (ctx) => {
   }
   
   try {
-    // Send message to backend
-    await axios.post(`${BACKEND_URL}/webhook`, {
-      event: 'operator_message',
-      data: {
-        sessionId: session.fullId,
-        message: messageText,
-        operatorId: chatId,
-        operatorName: ctx.from.first_name || 'اپراتور'
-      }
+    // Send message to user via backend
+    const response = await axios.post(`${BACKEND_URL}/api/send-to-user`, {
+      sessionId: session.fullId,
+      message: messageText,
+      operatorId: chatId,
+      operatorName: ctx.from.first_name || 'اپراتور'
     });
     
-    // Confirm to operator
-    ctx.reply(`✅ *پیام ارسال شد*\n\n`
-      + `📝 پیام شما: ${messageText.substring(0, 50)}${messageText.length > 50 ? '...' : ''}`, {
-        parse_mode: 'Markdown'
-      });
-    
-    // Log message
-    console.log(`📨 Operator ${chatId} sent message for session ${shortId}`);
+    if (response.data.success) {
+      // Confirm to operator
+      ctx.reply(`✅ *پیام ارسال شد*\n\n`
+        + `👤 به: ${response.data.userName || 'کاربر'}\n`
+        + `📝 پیام شما: ${messageText.substring(0, 50)}${messageText.length > 50 ? '...' : ''}`, {
+          parse_mode: 'Markdown'
+        });
+      
+      // Log message
+      console.log(`📨 Operator ${chatId} sent message for session ${shortId}`);
+    } else {
+      ctx.reply('❌ خطا در ارسال پیام');
+    }
     
   } catch (error) {
     console.error('Send message error:', error.message);
@@ -311,7 +313,7 @@ app.post('/webhook', async (req, res) => {
   try {
     const { event, data } = req.body;
     
-    console.log(`📨 Webhook from backend: ${event}`, { 
+    console.log(`📨 Webhook: ${event}`, { 
       sessionId: data.sessionId ? generateShortId(data.sessionId) : 'N/A',
       event 
     });
@@ -368,7 +370,6 @@ app.post('/webhook', async (req, res) => {
         break;
         
       default:
-        console.log(`⚠️ Unknown event from backend: ${event}`);
         res.json({ success: false, error: 'Unknown event' });
     }
     
@@ -400,32 +401,12 @@ async function startBot() {
       const webhookUrl = `${domain}/telegram-webhook`;
       console.log(`🌐 Setting webhook to: ${webhookUrl}`);
       
-      // Delete old webhook first
-      try {
-        await bot.telegram.deleteWebhook();
-        console.log('✅ Old webhook deleted');
-      } catch (error) {
-        console.log('ℹ️ No old webhook to delete');
-      }
-      
-      // Set new webhook
-      await bot.telegram.setWebhook(webhookUrl, {
-        allowed_updates: ['message', 'callback_query', 'chat_member']
-      });
-      
-      console.log('✅ Webhook set successfully');
+      await bot.telegram.setWebhook(webhookUrl);
       
       // Setup webhook endpoint
       app.post('/telegram-webhook', (req, res) => {
-        console.log('📨 Telegram webhook received');
-        try {
-          bot.handleUpdate(req.body, res);
-        } catch (error) {
-          console.error('❌ Error handling Telegram webhook:', error);
-          res.status(200).end(); // Always return 200 to Telegram
-        }
+        bot.handleUpdate(req.body, res);
       });
-      
     } else {
       // Use polling locally
       await bot.launch();
@@ -433,24 +414,18 @@ async function startBot() {
     }
     
     // Start web server
-    app.listen(webhookPort, '0.0.0.0', () => {
+    app.listen(webhookPort, () => {
       console.log(`🤖 Telegram bot server on port ${webhookPort}`);
       console.log('✅ Bot is ready!');
       
       // Send startup message
-      setTimeout(async () => {
-        try {
-          await bot.telegram.sendMessage(ADMIN_TELEGRAM_ID,
-            `🤖 *ربات فعال شد*\n\n`
-            + `⏰ ${new Date().toLocaleString('fa-IR')}\n`
-            + `✅ آماده دریافت درخواست‌ها\n\n`
-            + `برای آزمایش، روی یک جلسه در ویجت کلیک کنید.`, {
-              parse_mode: 'Markdown'
-            });
-        } catch (error) {
-          console.error('Failed to send startup message:', error.message);
-        }
-      }, 2000);
+      bot.telegram.sendMessage(ADMIN_TELEGRAM_ID,
+        `🤖 *ربات فعال شد*\n\n`
+        + `⏰ ${new Date().toLocaleString('fa-IR')}\n`
+        + `✅ آماده دریافت درخواست‌ها\n\n`
+        + `برای آزمایش، روی یک جلسه در ویجت کلیک کنید.`, {
+          parse_mode: 'Markdown'
+        }).catch(console.error);
     });
     
   } catch (error) {
@@ -460,17 +435,8 @@ async function startBot() {
 }
 
 // Graceful shutdown
-process.once('SIGINT', () => {
-  console.log('🛑 Shutting down bot...');
-  bot.stop('SIGINT');
-  process.exit(0);
-});
-
-process.once('SIGTERM', () => {
-  console.log('🛑 Terminating bot...');
-  bot.stop('SIGTERM');
-  process.exit(0);
-});
+process.once('SIGINT', () => bot.stop('SIGINT'));
+process.once('SIGTERM', () => bot.stop('SIGTERM'));
 
 // Start
-startBot();
+startBot(); 
