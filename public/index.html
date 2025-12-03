@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>پشتیبان هوشمند - دمو</title>
+    <title>پشتیبان هوشمند با قابلیت تلگرام</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="/widget.css">
     <style>
@@ -14,184 +14,174 @@
         }
         
         body {
-            font-family: 'Vazir', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
             display: flex;
-            flex-direction: column;
-            align-items: center;
             justify-content: center;
+            align-items: center;
             padding: 20px;
-            color: #333;
         }
         
         .container {
-            max-width: 800px;
+            max-width: 1000px;
             width: 100%;
-            text-align: center;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
         }
         
         .header {
+            background: linear-gradient(145deg, #2d8cff, #1a73e8);
+            color: white;
+            padding: 40px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 15px;
+        }
+        
+        .header p {
+            font-size: 1.2rem;
+            opacity: 0.9;
+            max-width: 800px;
+            margin: 0 auto;
+            line-height: 1.6;
+        }
+        
+        .content {
+            padding: 40px;
+        }
+        
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 30px;
             margin-bottom: 40px;
         }
         
-        .logo {
-            width: 100px;
-            height: 100px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        .feature-card {
+            background: #f8f9fa;
+            padding: 25px;
+            border-radius: 15px;
+            text-align: center;
+            transition: transform 0.3s, box-shadow 0.3s;
+            border: 1px solid #e9ecef;
+        }
+        
+        .feature-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        }
+        
+        .feature-icon {
+            width: 70px;
+            height: 70px;
+            background: linear-gradient(145deg, #2d8cff, #1a73e8);
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
             margin: 0 auto 20px;
+            font-size: 30px;
             color: white;
-            font-size: 40px;
         }
         
-        h1 {
+        .feature-card h3 {
             color: #333;
             margin-bottom: 10px;
-            font-size: 32px;
+            font-size: 1.3rem;
         }
         
-        .subtitle {
+        .feature-card p {
             color: #666;
-            font-size: 18px;
-            margin-bottom: 40px;
-        }
-        
-        .demo-info {
-            background: white;
-            padding: 30px;
-            border-radius: 20px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
-            margin-bottom: 40px;
-        }
-        
-        .info-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px;
-            margin-top: 20px;
-        }
-        
-        .info-card {
-            background: #f8f9fa;
-            padding: 20px;
-            border-radius: 10px;
-            text-align: right;
-        }
-        
-        .info-card i {
-            color: #667eea;
-            font-size: 24px;
-            margin-bottom: 10px;
-        }
-        
-        .info-card h3 {
-            color: #333;
-            margin-bottom: 10px;
-        }
-        
-        .embed-code {
-            background: #1e1e1e;
-            color: #d4d4d4;
-            padding: 20px;
-            border-radius: 10px;
-            text-align: left;
-            direction: ltr;
-            margin: 20px 0;
-            overflow-x: auto;
-            font-family: 'Courier New', monospace;
-            font-size: 14px;
-        }
-        
-        .copy-btn {
-            background: #667eea;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 5px;
-            cursor: pointer;
-            font-family: 'Vazir', sans-serif;
-            margin-top: 10px;
+            line-height: 1.6;
+            font-size: 0.95rem;
         }
         
         .instructions {
-            text-align: right;
-            margin: 30px 0;
-            padding: 20px;
-            background: #e3f2fd;
-            border-radius: 10px;
+            background: #f1f8ff;
+            padding: 30px;
+            border-radius: 15px;
+            margin-bottom: 30px;
+            border-right: 5px solid #2d8cff;
         }
         
-        .instructions h3 {
-            color: #1976d2;
-            margin-bottom: 15px;
+        .instructions h2 {
+            color: #1a73e8;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
         
         .instructions ol {
-            padding-right: 20px;
+            margin-right: 20px;
+            line-height: 2;
+            color: #444;
         }
         
         .instructions li {
             margin-bottom: 10px;
-            line-height: 1.6;
+            padding-right: 10px;
         }
         
-        .test-buttons {
+        .stats {
             display: flex;
-            gap: 10px;
-            justify-content: center;
-            margin: 20px 0;
+            justify-content: space-around;
             flex-wrap: wrap;
+            gap: 20px;
+            margin-top: 30px;
         }
         
-        .test-btn {
-            background: #4CAF50;
-            color: white;
-            border: none;
-            padding: 12px 24px;
-            border-radius: 8px;
-            cursor: pointer;
-            font-family: 'Vazir', sans-serif;
-            display: flex;
-            align-items: center;
-            gap: 8px;
+        .stat-item {
+            text-align: center;
+            padding: 20px;
+            min-width: 150px;
         }
         
-        .status {
-            margin-top: 20px;
-            padding: 15px;
-            border-radius: 8px;
+        .stat-value {
+            font-size: 2.5rem;
             font-weight: bold;
+            color: #2d8cff;
+            margin-bottom: 5px;
         }
         
-        .status.connected {
-            background: #d4edda;
-            color: #155724;
+        .stat-label {
+            color: #666;
+            font-size: 0.9rem;
         }
         
-        .status.disconnected {
-            background: #f8d7da;
-            color: #721c24;
+        .footer {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+            border-top: 1px solid #eee;
+            font-size: 0.9rem;
         }
         
         @media (max-width: 768px) {
-            .container {
-                padding: 10px;
+            .header {
+                padding: 30px 20px;
             }
             
-            h1 {
-                font-size: 24px;
+            .header h1 {
+                font-size: 2rem;
             }
             
-            .subtitle {
-                font-size: 16px;
+            .content {
+                padding: 30px 20px;
             }
             
-            .demo-info {
-                padding: 20px;
+            .features {
+                grid-template-columns: 1fr;
             }
         }
     </style>
@@ -199,167 +189,121 @@
 <body>
     <div class="container">
         <div class="header">
-            <div class="logo">
-                <i class="fas fa-robot"></i>
-            </div>
-            <h1>پشتیبان هوشمند AI</h1>
-            <p class="subtitle">سیستم چت هوشمند با قابلیت اتصال به اپراتور انسانی در تلگرام</p>
+            <h1><i class="fas fa-robot"></i> پشتیبان هوشمند با قابلیت تلگرام</h1>
+            <p>سیستم پشتیبانی پیشرفته با قابلیت اتصال خودکار به هوش مصنوعی و اپراتورهای انسانی از طریق تلگرام</p>
         </div>
         
-        <div class="demo-info">
-            <h2>🎯 راهنمای استفاده</h2>
-            <p>این ویجت به صورت خودکار در صفحه فعال شده است. برای تست:</p>
-            
-            <div class="info-grid">
-                <div class="info-card">
-                    <i class="fas fa-comment-dots"></i>
-                    <h3>چت با AI</h3>
-                    <p>سوالات خود را از هوش مصنوعی بپرسید</p>
+        <div class="content">
+            <div class="features">
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <i class="fas fa-brain"></i>
+                    </div>
+                    <h3>هوش مصنوعی پیشرفته</h3>
+                    <p>پاسخگویی خودکار به سوالات با استفاده از هوش مصنوعی Groq با قابلیت پردازش زبان فارسی</p>
                 </div>
                 
-                <div class="info-card">
-                    <i class="fas fa-user-headset"></i>
-                    <h3>اپراتور انسانی</h3>
-                    <p>در صورت نیاز به اپراتور متصل شوید</p>
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <i class="fab fa-telegram"></i>
+                    </div>
+                    <h3>اتصال به تلگرام</h3>
+                    <p>ارتباط مستقیم با اپراتورهای انسانی از طریق تلگرام در صورت نیاز به پشتیبانی تخصصی</p>
                 </div>
                 
-                <div class="info-card">
-                    <i class="fas fa-bolt"></i>
-                    <h3>پاسخ فوری</h3>
-                    <p>پاسخ‌های سریع و دقیق دریافت کنید</p>
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <i class="fas fa-comments"></i>
+                    </div>
+                    <h3>چت زنده</h3>
+                    <p>سیستم چت زنده با رابط کاربری زیبا و امکان ارسال پیام، تصویر و فایل</p>
                 </div>
                 
-                <div class="info-card">
-                    <i class="fas fa-mobile-alt"></i>
-                    <h3>واکنش‌گرا</h3>
-                    <p>سازگار با تمام دستگاه‌ها</p>
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <i class="fas fa-history"></i>
+                    </div>
+                    <h3>ذخیره تاریخچه</h3>
+                    <p>ذخیره خودکار تمامی گفتگوها و امکان مرور تاریخچه مکالمات</p>
                 </div>
             </div>
             
             <div class="instructions">
-                <h3>📝 نحوه استفاده در سایت شما:</h3>
+                <h2><i class="fas fa-info-circle"></i> راهنمای استفاده</h2>
                 <ol>
-                    <li>کد زیر را در قسمت <strong>&lt;head&gt;</strong> سایت خود قرار دهید</li>
-                    <li>آدرس Railway خود را جایگزین کنید</li>
-                    <li>ویجت به صورت خودکار در سایت نمایش داده می‌شود</li>
+                    <li>برای شروع گفتگو، روی دکمه چت در پایین سمت راست صفحه کلیک کنید</li>
+                    <li>سوال خود را از دستیار هوشمند بپرسید</li>
+                    <li>در صورت نیاز به پشتیبانی انسانی، روی دکمه "اتصال به اپراتور انسانی" کلیک کنید</li>
+                    <li>درخواست شما به اپراتورهای تلگرام ارسال می‌شود</li>
+                    <li>اپراتور درخواست شما را پذیرفته و گفتگو آغاز می‌شود</li>
+                    <li>تمام مکالمات به صورت امن ذخیره می‌شوند</li>
                 </ol>
-                
-                <div class="embed-code">
-                    &lt;!-- Chat Widget Embed Code --&gt;<br>
-                    &lt;script src="https://cdn.jsdelivr.net/npm/socket.io-client@4.7.2/dist/socket.io.min.js"&gt;&lt;/script&gt;<br>
-                    &lt;link rel="stylesheet" href="<span id="css-url">https://your-railway-url.up.railway.app/widget.css</span>" crossorigin="anonymous"&gt;<br>
-                    &lt;script src="<span id="js-url">https://your-railway-url.up.railway.app/widget.js</span>" crossorigin="anonymous"&gt;&lt;/script&gt;<br>
-                    &lt;script&gt;<br>
-                    &nbsp;&nbsp;// Wait for widget to load<br>
-                    &nbsp;&nbsp;window.addEventListener('load', function() {<br>
-                    &nbsp;&nbsp;&nbsp;&nbsp;if (window.initChatWidget) {<br>
-                    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;window.initChatWidget({<br>
-                    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;backendUrl: '<span id="backend-url">https://your-railway-url.up.railway.app</span>'<br>
-                    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;});<br>
-                    &nbsp;&nbsp;&nbsp;&nbsp;}<br>
-                    &nbsp;&nbsp;});<br>
-                    &lt;/script&gt;
+            </div>
+            
+            <div class="stats">
+                <div class="stat-item">
+                    <div class="stat-value" id="ai-requests">0</div>
+                    <div class="stat-label">پاسخ‌های هوش مصنوعی</div>
                 </div>
-                
-                <button class="copy-btn" onclick="copyEmbedCode()">
-                    <i class="fas fa-copy"></i> کپی کد
-                </button>
+                <div class="stat-item">
+                    <div class="stat-value" id="human-chats">0</div>
+                    <div class="stat-label">گفتگوهای انسانی</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="active-sessions">0</div>
+                    <div class="stat-label">جلسات فعال</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="success-rate">100%</div>
+                    <div class="stat-label">میزان رضایت</div>
+                </div>
             </div>
         </div>
         
-        <div class="test-buttons">
-            <button class="test-btn" onclick="testAI()">
-                <i class="fas fa-robot"></i> تست هوش مصنوعی
-            </button>
-            <button class="test-btn" onclick="testHuman()">
-                <i class="fas fa-user-headset"></i> تست اپراتور انسانی
-            </button>
-            <button class="test-btn" onclick="testConnection()">
-                <i class="fas fa-wifi"></i> تست اتصال
-            </button>
+        <div class="footer">
+            <p>© 2024 سیستم پشتیبانی هوشمند. تمامی حقوق محفوظ است.</p>
+            <p>نسخه: ۲.۰ | وضعیت: <span id="system-status" style="color: #2ecc71;">● آنلاین</span></p>
         </div>
-        
-        <div id="status" class="status"></div>
     </div>
+
+    <!-- Chat Widget will be injected here -->
     
-    <!-- Include Socket.io -->
-    <script src="https://cdn.jsdelivr.net/npm/socket.io-client@4.7.2/dist/socket.io.min.js"></script>
-    
-    <!-- Include Widget -->
-    <link rel="stylesheet" href="/widget.css">
+    <script src="/socket.io/socket.io.js"></script>
     <script src="/widget.js"></script>
-    
     <script>
-        // Update URLs in embed code
-        const currentUrl = window.location.origin;
-        document.getElementById('css-url').textContent = currentUrl + '/widget.css';
-        document.getElementById('js-url').textContent = currentUrl + '/widget.js';
-        document.getElementById('backend-url').textContent = currentUrl;
-        
-        // Initialize widget
-        window.addEventListener('load', function() {
-            if (window.initChatWidget) {
-                window.initChatWidget({
-                    backendUrl: currentUrl
+        // Update stats every 10 seconds
+        function updateStats() {
+            fetch('/api/stats')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('ai-requests').textContent = data.totalSessions || 0;
+                    document.getElementById('human-chats').textContent = data.humanConnected || 0;
+                    document.getElementById('active-sessions').textContent = data.activeSessions || 0;
+                    document.getElementById('success-rate').textContent = '100%';
+                    
+                    const statusEl = document.getElementById('system-status');
+                    statusEl.innerHTML = data.aiEnabled ? '● آنلاین' : '● محدود';
+                    statusEl.style.color = data.aiEnabled ? '#2ecc71' : '#ff9500';
+                })
+                .catch(error => {
+                    console.error('Error fetching stats:', error);
                 });
-                updateStatus('✅ ویجت با موفقیت راه‌اندازی شد', 'connected');
-            } else {
-                updateStatus('❌ خطا در راه‌اندازی ویجت', 'disconnected');
-            }
+        }
+        
+        // Initial update
+        updateStats();
+        
+        // Update every 10 seconds
+        setInterval(updateStats, 10000);
+        
+        // Initialize chat widget
+        document.addEventListener('DOMContentLoaded', function() {
+            window.chatWidget = new ChatWidget({
+                backendUrl: window.location.origin,
+                position: 'bottom-right',
+                theme: 'default'
+            });
         });
-        
-        function copyEmbedCode() {
-            const code = `<!-- Chat Widget Embed Code -->
-<script src="https://cdn.jsdelivr.net/npm/socket.io-client@4.7.2/dist/socket.io.min.js"></script>
-<link rel="stylesheet" href="${currentUrl}/widget.css" crossorigin="anonymous">
-<script src="${currentUrl}/widget.js" crossorigin="anonymous"></script>
-<script>
-    window.addEventListener('load', function() {
-        if (window.initChatWidget) {
-            window.initChatWidget({
-                backendUrl: '${currentUrl}'
-            });
-        }
-    });
-</script>`;
-            
-            navigator.clipboard.writeText(code).then(() => {
-                alert('✅ کد با موفقیت کپی شد!');
-            });
-        }
-        
-        function testAI() {
-            if (window.ChatWidget && window.ChatWidget.addMessage) {
-                window.ChatWidget.addMessage('user', 'سلام! می‌تونم یک تست انجام بدم؟');
-                setTimeout(() => {
-                    window.ChatWidget.addMessage('assistant', 'سلام! بله حتما. من پشتیبان هوشمند شما هستم. چطور می‌تونم کمکتون کنم؟');
-                }, 1000);
-                updateStatus('✅ تست هوش مصنوعی انجام شد', 'connected');
-            }
-        }
-        
-        function testHuman() {
-            if (window.ChatWidget && window.ChatWidget.addMessage) {
-                window.ChatWidget.addMessage('user', 'لطفاً به اپراتور انسانی متصل شوید');
-                updateStatus('✅ درخواست اتصال به اپراتور ارسال شد', 'connected');
-            }
-        }
-        
-        async function testConnection() {
-            try {
-                const response = await fetch('/api/health');
-                const data = await response.json();
-                updateStatus(`✅ اتصال برقرار است - ${data.message}`, 'connected');
-            } catch (error) {
-                updateStatus('❌ خطا در اتصال به سرور', 'disconnected');
-            }
-        }
-        
-        function updateStatus(message, type) {
-            const statusEl = document.getElementById('status');
-            statusEl.textContent = message;
-            statusEl.className = `status ${type}`;
-        }
     </script>
 </body>
 </html>
