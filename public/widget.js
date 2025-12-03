@@ -219,7 +219,20 @@ class ChatWidget {
                 // Join session
                 this.state.socket.emit('join', this.state.sessionId);
             });
-            
+
+            // در تابع initWebSocket یا constructor:
+this.state.socket.on('operator-accepted', (data) => {
+  this.addMessage('system', data.message);
+  this.state.operatorConnected = true;
+  this.elements.operatorInfo.classList.add('active');
+});
+
+this.state.socket.on('operator-rejected', (data) => {
+  this.addMessage('system', data.message);
+  this.state.operatorConnected = false;
+  this.elements.operatorInfo.classList.remove('active');
+  this.resetHumanSupportButton();
+});
             this.state.socket.on('operator-connected', (data) => {
                 this.handleOperatorConnected(data);
             });
