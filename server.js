@@ -19,23 +19,57 @@ const ADMIN_TELEGRAM_ID = process.env.ADMIN_TELEGRAM_ID;
 // ==================== Initialize App ====================
 const app = express();
 const server = http.createServer(app);
+
+// CORS Configuration
 const io = socketIo(server, {
   cors: {
     origin: "*",
-    methods: ["GET", "POST"]
-  }
+    methods: ["GET", "POST", "OPTIONS"],
+    credentials: true,
+    allowedHeaders: ["Content-Type", "Authorization"]
+  },
+  transports: ['websocket', 'polling']
 });
 
-// ==================== Middleware ====================
-app.use(cors());
+// ==================== Enhanced CORS Middleware ====================
+app.use(cors({
+  origin: "*",
+  methods: ["GET", "POST", "OPTIONS", "PUT", "DELETE"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+  credentials: true,
+  preflightContinue: false,
+  optionsSuccessStatus: 204
+}));
+
+// Handle preflight requests
+app.options('*', cors());
+
+// ==================== Other Middleware ====================
 app.use(express.json());
-app.use(helmet());
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.urlencoded({ extended: true }));
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginEmbedderPolicy: false
+}));
+
+// ==================== Serve Static Files ====================
+app.use(express.static(path.join(__dirname, 'public'), {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.js')) {
+      res.setHeader('Content-Type', 'application/javascript');
+    } else if (filePath.endsWith('.css')) {
+      res.setHeader('Content-Type', 'text/css');
+    }
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  }
+}));
 
 // Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100
+  max: 100,
+  message: 'تعداد درخواست‌های شما زیاد شده است. لطفاً چند دقیقه صبر کنید.'
 });
 app.use('/api/', limiter);
 
@@ -77,6 +111,8 @@ class AIService {
         { role: 'user', content: userMessage }
       ];
 
+      console.log('Sending to AI:', { message: userMessage.substring(0, 100) });
+
       const response = await this.axiosInstance.post('/chat/completions', {
         model: this.model,
         messages: messages,
@@ -87,6 +123,7 @@ class AIService {
 
       if (response.data?.choices?.[0]?.message?.content) {
         const aiMessage = response.data.choices[0].message.content;
+        console.log('AI Response received');
         
         if (this.shouldConnectToHuman(aiMessage)) {
           return {
@@ -202,7 +239,7 @@ class SessionManager {
     const id = sessionId || uuidv4();
     const session = new Session(id, userInfo);
     this.sessions.set(id, session);
-    console.log(`Session created: ${id}`);
+    console.log(`✅ Session created: ${id}`);
     return session;
   }
 
@@ -247,7 +284,7 @@ class SessionManager {
       }
     }
     if (cleanedCount > 0) {
-      console.log(`Cleaned ${cleanedCount} expired sessions`);
+      console.log(`🧹 Cleaned ${cleanedCount} expired sessions`);
     }
   }
 }
@@ -267,7 +304,7 @@ class TelegramBotManager {
   initializeBot() {
     try {
       if (!TELEGRAM_BOT_TOKEN) {
-        console.warn('Telegram bot token not provided. Telegram features disabled.');
+        console.warn('⚠️ Telegram bot token not provided. Telegram features disabled.');
         return;
       }
 
@@ -422,7 +459,7 @@ class TelegramBotManager {
         operatorName: 'پشتیبان آنلاین'
       });
 
-      console.log(`Session ${sessionId} connected to operator ${operatorId}`);
+      console.log(`✅ Session ${sessionId} connected to operator ${operatorId}`);
       
       return {
         success: true,
@@ -431,7 +468,7 @@ class TelegramBotManager {
       };
 
     } catch (error) {
-      console.error('Error connecting to operator:', error);
+      console.error('❌ Error connecting to operator:', error);
       return {
         success: false,
         error: error.message
@@ -461,7 +498,7 @@ class TelegramBotManager {
       };
 
     } catch (error) {
-      console.error('Error sending to operator:', error);
+      console.error('❌ Error sending to operator:', error);
       return {
         success: false,
         error: error.message
@@ -483,10 +520,11 @@ class TelegramBotManager {
         session.addMessage('operator', message);
       }
 
+      console.log(`📤 Message sent to user in session ${sessionId.substring(0, 8)}...`);
       return true;
 
     } catch (error) {
-      console.error('Error sending to user:', error);
+      console.error('❌ Error sending to user:', error);
       return false;
     }
   }
@@ -496,7 +534,7 @@ class TelegramBotManager {
       await this.bot.telegram.sendMessage(this.adminId, message);
       return true;
     } catch (error) {
-      console.error('Error sending to admin:', error);
+      console.error('❌ Error sending to admin:', error);
       return false;
     }
   }
@@ -518,19 +556,19 @@ let telegramBot = null;
 try {
   telegramBot = new TelegramBotManager(sessionManager, io);
 } catch (error) {
-  console.warn('Telegram bot initialization failed, continuing without Telegram features');
+  console.warn('⚠️ Telegram bot initialization failed, continuing without Telegram features');
 }
 
 // ==================== WebSocket Handling ====================
 const activeConnections = new Map();
 
 io.on('connection', (socket) => {
-  console.log('New client connected:', socket.id);
+  console.log('🌐 New WebSocket connection:', socket.id);
 
   socket.on('join-session', (sessionId) => {
     socket.join(sessionId);
     activeConnections.set(socket.id, sessionId);
-    console.log(`Client ${socket.id} joined session ${sessionId}`);
+    console.log(`🔗 Client ${socket.id.substring(0, 8)} joined session ${sessionId.substring(0, 8)}...`);
   });
 
   socket.on('disconnect', () => {
@@ -538,7 +576,7 @@ io.on('connection', (socket) => {
     if (sessionId) {
       socket.leave(sessionId);
       activeConnections.delete(socket.id);
-      console.log(`Client ${socket.id} disconnected from session ${sessionId}`);
+      console.log(`🔌 Client ${socket.id.substring(0, 8)} disconnected`);
     }
   });
 });
@@ -549,18 +587,31 @@ app.get('/api/health', (req, res) => {
     status: 'OK', 
     timestamp: new Date().toISOString(),
     telegram: telegramBot ? 'active' : 'inactive',
-    sessions: sessionManager.sessions.size
+    sessions: sessionManager.sessions.size,
+    url: process.env.RAILWAY_STATIC_URL || `http://localhost:${PORT}`
   });
 });
 
+// Route for widget files
 app.get('/widget.js', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public/widget.js'));
+  res.sendFile(path.join(__dirname, 'public/widget.js'), {
+    headers: {
+      'Content-Type': 'application/javascript',
+      'Access-Control-Allow-Origin': '*'
+    }
+  });
 });
 
 app.get('/widget.css', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public/widget.css'));
+  res.sendFile(path.join(__dirname, 'public/widget.css'), {
+    headers: {
+      'Content-Type': 'text/css',
+      'Access-Control-Allow-Origin': '*'
+    }
+  });
 });
 
+// API endpoint for chat
 app.post('/api/chat', async (req, res) => {
   try {
     const { message, sessionId } = req.body;
@@ -568,6 +619,8 @@ app.post('/api/chat', async (req, res) => {
     if (!message || !sessionId) {
       return res.status(400).json({ error: 'Message and sessionId are required' });
     }
+
+    console.log(`💬 Chat request: ${sessionId.substring(0, 8)}... - "${message.substring(0, 50)}..."`);
 
     let session = sessionManager.getSession(sessionId);
     if (!session) {
@@ -597,7 +650,7 @@ app.post('/api/chat', async (req, res) => {
       });
     }
   } catch (error) {
-    console.error('Chat error:', error);
+    console.error('❌ Chat error:', error);
     res.status(500).json({ 
       error: 'خطا در پردازش درخواست',
       requiresHuman: true 
@@ -605,6 +658,7 @@ app.post('/api/chat', async (req, res) => {
   }
 });
 
+// Connect to human operator
 app.post('/api/connect-human', async (req, res) => {
   try {
     const { sessionId, userInfo } = req.body;
@@ -625,6 +679,8 @@ app.post('/api/connect-human', async (req, res) => {
       });
     }
 
+    console.log(`👤 Human connection requested: ${sessionId.substring(0, 8)}...`);
+    
     const connectionResult = await telegramBot.connectToOperator(sessionId, userInfo);
     
     if (connectionResult.success) {
@@ -641,11 +697,12 @@ app.post('/api/connect-human', async (req, res) => {
       });
     }
   } catch (error) {
-    console.error('Connect human error:', error);
+    console.error('❌ Connect human error:', error);
     res.status(500).json({ error: 'خطا در اتصال به اپراتور' });
   }
 });
 
+// Send message to operator
 app.post('/api/send-to-operator', async (req, res) => {
   try {
     const { sessionId, message } = req.body;
@@ -661,23 +718,72 @@ app.post('/api/send-to-operator', async (req, res) => {
       });
     }
 
+    console.log(`📨 Sending to operator: ${sessionId.substring(0, 8)}... - "${message.substring(0, 50)}..."`);
+    
     const result = await telegramBot.sendToOperator(sessionId, message);
     res.json(result);
   } catch (error) {
-    console.error('Send to operator error:', error);
+    console.error('❌ Send to operator error:', error);
     res.status(500).json({ error: 'خطا در ارسال پیام' });
   }
 });
 
+// Test endpoint
+app.get('/api/test', (req, res) => {
+  res.json({
+    message: 'API is working!',
+    serverTime: new Date().toISOString(),
+    environment: process.env.NODE_ENV,
+    publicPath: path.join(__dirname, 'public')
+  });
+});
+
 // ==================== Serve Frontend ====================
 app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public/widget.html'), {
+    headers: {
+      'Content-Type': 'text/html; charset=utf-8'
+    }
+  });
+});
+
+// Catch-all route for frontend
+app.get('*', (req, res) => {
+  if (req.url.startsWith('/api/')) {
+    return res.status(404).json({ error: 'API endpoint not found' });
+  }
   res.sendFile(path.join(__dirname, 'public/widget.html'));
 });
 
+// ==================== Error Handling ====================
+app.use((err, req, res, next) => {
+  console.error('🔥 Server error:', err);
+  res.status(500).json({ 
+    error: 'Internal server error',
+    message: process.env.NODE_ENV === 'development' ? err.message : undefined
+  });
+});
+
 // ==================== Start Server ====================
-server.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`🌐 WebSocket server ready`);
-  console.log(`🤖 Telegram bot: ${telegramBot ? 'Active' : 'Inactive'}`);
-  console.log(`🔗 Widget URL: http://localhost:${PORT}`);
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`
+  ============================================
+  🚀 AI Chatbot Support System Started
+  ============================================
+  📡 Port: ${PORT}
+  🌐 WebSocket: Ready
+  🤖 Telegram Bot: ${telegramBot ? '✅ Active' : '⚠️ Disabled'}
+  📁 Public Directory: ${path.join(__dirname, 'public')}
+  🔗 Health Check: http://localhost:${PORT}/api/health
+  🎯 Widget URL: http://localhost:${PORT}/widget.js
+  ============================================
+  `);
+  
+  // Log environment info
+  console.log('Environment:', {
+    NODE_ENV: process.env.NODE_ENV,
+    HAS_GROQ_KEY: !!GROQ_API_KEY,
+    HAS_TELEGRAM_TOKEN: !!TELEGRAM_BOT_TOKEN,
+    HAS_ADMIN_ID: !!ADMIN_TELEGRAM_ID
+  });
 });
