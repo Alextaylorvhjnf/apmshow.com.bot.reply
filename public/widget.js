@@ -11,6 +11,7 @@ class ChatWidget {
             isOpen: false,
             isConnected: false,
             operatorConnected: false,
+            isConnecting: false,
             sessionId: null,
             socket: null,
             messages: [],
@@ -208,45 +209,87 @@ class ChatWidget {
             this.state.socket = io(wsUrl, {
                 transports: ['websocket', 'polling'],
                 reconnection: true,
-                reconnectionAttempts: 5
+                reconnectionAttempts: 5,
+                reconnectionDelay: 1000
             });
             
             this.state.socket.on('connect', () => {
-                console.log('WebSocket connected');
+                console.log('✅ WebSocket connected');
                 this.state.isConnected = true;
                 this.updateConnectionStatus(true);
                 
-                // Join session
-                this.state.socket.emit('join', this.state.sessionId);
+                // Join session room
+                this.state.socket.emit('join-session', this.state.sessionId);
+                console.log(`🔗 Joined session room: ${this.state.sessionId}`);
             });
 
-            // در تابع initWebSocket یا constructor:
-this.state.socket.on('operator-accepted', (data) => {
-  this.addMessage('system', data.message);
-  this.state.operatorConnected = true;
-  this.elements.operatorInfo.classList.add('active');
-});
-
-this.state.socket.on('operator-rejected', (data) => {
-  this.addMessage('system', data.message);
-  this.state.operatorConnected = false;
-  this.elements.operatorInfo.classList.remove('active');
-  this.resetHumanSupportButton();
-});
-            this.state.socket.on('operator-connected', (data) => {
-                this.handleOperatorConnected(data);
+            this.state.socket.on('operator-accepted', (data) => {
+                console.log('✅ Operator accepted connection:', data);
+                this.state.operatorConnected = true;
+                this.elements.operatorInfo.classList.add('active');
+                this.addMessage('system', data.message);
+                
+                // Update button
+                this.elements.humanSupportBtn.innerHTML = `
+                    <i class="fas fa-user-check"></i>
+                    متصل به اپراتور
+                `;
+                this.elements.humanSupportBtn.style.background = 'linear-gradient(145deg, #2ecc71, #27ae60)';
+                this.elements.humanSupportBtn.disabled = true;
+                
+                // Enable message input
+                this.elements.messageInput.disabled = false;
+                this.elements.messageInput.placeholder = 'پیام خود را برای اپراتور بنویسید...';
+            });
+            
+            this.state.socket.on('operator-rejected', (data) => {
+                console.log('❌ Operator rejected connection:', data);
+                this.state.operatorConnected = false;
+                this.elements.operatorInfo.classList.remove('active');
+                this.addMessage('system', data.message);
+                this.resetHumanSupportButton();
             });
             
             this.state.socket.on('operator-message', (data) => {
+                console.log('📩 Received message from operator:', data);
                 this.addMessage('operator', data.message);
+                
+                // Show notification if chat is closed
+                if (!this.state.isOpen) {
+                    this.showNotification();
+                }
             });
             
-            this.state.socket.on('connect_error', () => {
+            this.state.socket.on('session-ended', (data) => {
+                console.log('📭 Session ended:', data);
+                this.addMessage('system', data.message);
+                this.state.operatorConnected = false;
+                this.elements.operatorInfo.classList.remove('active');
+                this.resetHumanSupportButton();
+            });
+            
+            this.state.socket.on('message-sent', (data) => {
+                if (data.success) {
+                    console.log('✅ Message sent successfully');
+                } else {
+                    console.error('❌ Failed to send message:', data.error);
+                    this.addMessage('system', `❌ ${data.error || 'خطا در ارسال پیام'}`);
+                }
+            });
+            
+            this.state.socket.on('connect_error', (error) => {
+                console.error('❌ WebSocket connection error:', error);
+                this.updateConnectionStatus(false);
+            });
+            
+            this.state.socket.on('disconnect', () => {
+                console.log('🔌 WebSocket disconnected');
+                this.state.isConnected = false;
                 this.updateConnectionStatus(false);
             });
             
         } catch (error) {
-            console.error('WebSocket connection failed:', error);
+            console.error('❌ WebSocket connection failed:', error);
         }
     }
     
@@ -254,11 +297,15 @@ this.state.socket.on('operator-rejected', (data) => {
         if (connected) {
             this.elements.connectionStatus.classList.remove('active');
             this.elements.chatStatus.innerHTML = `
-                <span class="status-dot"></span>
+                <span class="status-dot connected"></span>
                 <span>آنلاین</span>
             `;
         } else {
             this.elements.connectionStatus.classList.add('active');
+            this.elements.chatStatus.innerHTML = `
+                <span class="status-dot disconnected"></span>
+                <span>آفلاین</span>
+            `;
         }
     }
     
@@ -300,16 +347,25 @@ this.state.socket.on('operator-rejected', (data) => {
         
         try {
             if (this.state.operatorConnected) {
-                // Send to operator via API
-                await this.sendToOperator(message);
+                // Send to operator via WebSocket
+                this.state.socket.emit('send-to-operator', {
+                    sessionId: this.state.sessionId,
+                    message: message
+                });
+                
+                // Wait for acknowledgment
+                setTimeout(() => {
+                    this.setTyping(false);
+                }, 1000);
+                
             } else {
-                // Send to AI
+                // Send to AI via API
                 await this.sendToAI(message);
+                this.setTyping(false);
             }
         } catch (error) {
             console.error('Send message error:', error);
             this.addMessage('system', 'خطا در ارسال پیام. لطفاً دوباره تلاش کنید.');
-        } finally {
             this.setTyping(false);
         }
     }
@@ -341,7 +397,7 @@ this.state.socket.on('operator-rejected', (data) => {
                     this.elements.humanSupportBtn.style.background = '#ff9500';
                 }
             } else {
-                this.addMessage('system', data.message);
+                this.addMessage('system', data.message || 'خطا در پردازش پیام');
             }
             
         } catch (error) {
@@ -350,95 +406,80 @@ this.state.socket.on('operator-rejected', (data) => {
         }
     }
     
-    async sendToOperator(message) {
+    async connectToHuman() {
+        if (this.state.operatorConnected || this.state.isConnecting) return;
+        
+        this.state.isConnecting = true;
+        this.elements.humanSupportBtn.disabled = true;
+        this.elements.humanSupportBtn.innerHTML = `
+            <i class="fas fa-spinner fa-spin"></i>
+            در حال اتصال...
+        `;
+        
         try {
-            const response = await fetch(`${this.options.backendUrl}/api/send-to-operator`, {
+            const userInfo = {
+                name: 'کاربر سایت',
+                page: window.location.href,
+                userAgent: navigator.userAgent,
+                referrer: document.referrer,
+                email: localStorage.getItem('user_email') || 'ندارد'
+            };
+            
+            console.log('👤 Requesting human connection...');
+            
+            const response = await fetch(`${this.options.backendUrl}/api/connect-human`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
                     sessionId: this.state.sessionId,
-                    message: message
+                    userInfo: userInfo
                 })
             });
             
             const data = await response.json();
             
-            if (!data.success) {
-                this.addMessage('system', 'خطا در ارسال پیام به اپراتور');
+            if (data.success) {
+                this.addMessage('system', data.message);
+                
+                if (data.pending) {
+                    // در انتظار پذیرش اپراتور
+                    this.elements.humanSupportBtn.innerHTML = `
+                        <i class="fas fa-clock"></i>
+                        در انتظار پذیرش اپراتور
+                    `;
+                    this.elements.humanSupportBtn.style.background = '#ff9500';
+                    this.elements.humanSupportBtn.disabled = true;
+                    
+                    console.log('⏳ Waiting for operator acceptance...');
+                } else if (data.operatorConnected) {
+                    // مستقیماً متصل شد
+                    this.state.operatorConnected = true;
+                    this.elements.operatorInfo.classList.add('active');
+                    this.elements.humanSupportBtn.innerHTML = `
+                        <i class="fas fa-user-check"></i>
+                        متصل به اپراتور
+                    `;
+                    this.elements.humanSupportBtn.style.background = 'linear-gradient(145deg, #2ecc71, #27ae60)';
+                    this.elements.humanSupportBtn.disabled = true;
+                    
+                    console.log('✅ Connected to human operator');
+                }
+            } else {
+                this.addMessage('system', `❌ ${data.error || 'خطا در اتصال به اپراتور'}`);
+                this.resetHumanSupportButton();
             }
             
         } catch (error) {
-            console.error('Operator request error:', error);
-            this.addMessage('system', 'خطا در ارتباط با اپراتور');
-        }
-    }
-    
-   async connectToHuman() {
-    if (this.state.operatorConnected || this.state.isConnecting) return;
-    
-    this.state.isConnecting = true;
-    this.elements.humanSupportBtn.disabled = true;
-    this.elements.humanSupportBtn.innerHTML = `
-        <i class="fas fa-spinner fa-spin"></i>
-        در حال اتصال...
-    `;
-    
-    try {
-        const userInfo = {
-            name: 'کاربر سایت',
-            page: window.location.href,
-            userAgent: navigator.userAgent,
-            referrer: document.referrer
-        };
-        
-        console.log('👤 Requesting human connection...');
-        
-        const response = await fetch(`${this.options.backendUrl}/api/connect-human`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                sessionId: this.state.sessionId,
-                userInfo: userInfo
-            })
-        });
-        
-        const data = await response.json();
-        
-        if (data.success) {
-            this.state.operatorConnected = true;
-            this.elements.operatorInfo.classList.add('active');
-            this.addMessage('system', data.message);
-            
-            // Update button
-            this.elements.humanSupportBtn.innerHTML = `
-                <i class="fas fa-user-check"></i>
-                متصل به اپراتور
-            `;
-            this.elements.humanSupportBtn.style.background = 'linear-gradient(145deg, #2ecc71, #27ae60)';
-            this.elements.humanSupportBtn.disabled = true;
-            
-            console.log('✅ Connected to human operator');
-        } else {
-            this.addMessage('system', `❌ ${data.error || 'خطا در اتصال به اپراتور'}`);
-            if (data.details) {
-                console.error('Connection error details:', data.details);
-            }
+            console.error('❌ Connect to human error:', error);
+            this.addMessage('system', '❌ خطا در ارتباط با سرور');
             this.resetHumanSupportButton();
+        } finally {
+            this.state.isConnecting = false;
+            this.elements.humanSupportBtn.disabled = false;
         }
-        
-    } catch (error) {
-        console.error('❌ Connect to human error:', error);
-        this.addMessage('system', '❌ خطا در ارتباط با سرور');
-        this.resetHumanSupportButton();
-    } finally {
-        this.state.isConnecting = false;
-        this.elements.humanSupportBtn.disabled = false;
     }
-}
     
     resetHumanSupportButton() {
         this.elements.humanSupportBtn.innerHTML = `
@@ -446,13 +487,7 @@ this.state.socket.on('operator-rejected', (data) => {
             اتصال به اپراتور انسانی
         `;
         this.elements.humanSupportBtn.style.background = '#ff6b6b';
-    }
-    
-    handleOperatorConnected(data) {
-        this.state.operatorConnected = true;
-        this.elements.operatorInfo.classList.add('active');
-        this.addMessage('operator', data.message);
-        this.resetHumanSupportButton();
+        this.elements.humanSupportBtn.disabled = false;
     }
     
     addMessage(type, text) {
@@ -480,17 +515,19 @@ this.state.socket.on('operator-rejected', (data) => {
                 senderIcon = '<i class="fas fa-user-tie"></i>';
                 senderText = 'اپراتور انسانی';
                 break;
+            case 'system':
+                senderIcon = '<i class="fas fa-info-circle"></i>';
+                senderText = 'سیستم';
+                break;
         }
         
         messageEl.innerHTML = `
-            ${senderIcon ? `
-            <div class="message-sender">
+            <div class="message-header">
                 ${senderIcon}
-                <span>${senderText}</span>
+                <span class="message-sender">${senderText}</span>
+                <span class="message-time">${time}</span>
             </div>
-            ` : ''}
             <div class="message-text">${this.escapeHtml(text)}</div>
-            <div class="message-time">${time}</div>
         `;
         
         this.elements.messagesContainer.appendChild(messageEl);
@@ -500,7 +537,7 @@ this.state.socket.on('operator-rejected', (data) => {
         this.state.messages.push({ type, text, time });
         
         // Show notification if chat is closed
-        if (!this.state.isOpen) {
+        if (!this.state.isOpen && type !== 'user') {
             this.showNotification();
         }
     }
@@ -525,6 +562,12 @@ this.state.socket.on('operator-rejected', (data) => {
         const count = parseInt(badge.textContent) || 0;
         badge.textContent = count + 1;
         badge.style.display = 'flex';
+        
+        // Animate badge
+        badge.classList.add('pulse');
+        setTimeout(() => {
+            badge.classList.remove('pulse');
+        }, 500);
     }
     
     resetNotification() {
@@ -536,7 +579,7 @@ this.state.socket.on('operator-rejected', (data) => {
     escapeHtml(text) {
         const div = document.createElement('div');
         div.textContent = text;
-        return div.innerHTML;
+        return div.innerHTML.replace(/\n/g, '<br>');
     }
 }
 
@@ -552,4 +595,4 @@ if (document.readyState === 'loading') {
 // Global initialization function
 window.initChatWidget = function(options) {
     return new ChatWidget(options);
-}; 
+};
