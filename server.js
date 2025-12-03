@@ -10,20 +10,16 @@ const NodeCache = require('node-cache');
 require('dotenv').config();
 
 console.log('='.repeat(60));
-console.log('🚀 AI CHATBOT WITH TELEGRAM SUPPORT - FIXED');
+console.log('🚀 AI CHATBOT WITH TELEGRAM SUPPORT - FIXED VERSION');
 console.log('='.repeat(60));
 
 const PORT = process.env.PORT || 3000;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8200429613:AAGTgP5hnOiRIxXc3YJmxvTqwEqhQ4crGkk';
-const TELEGRAM_BOT_URL = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}`;
-const TELEGRAM_BOT_WEBHOOK = process.env.TELEGRAM_BOT_WEBHOOK || 'http://localhost:3001/webhook';
-const ADMIN_TELEGRAM_ID = process.env.ADMIN_TELEGRAM_ID || '6234289265'; // ایدی عددی ادمین
+const TELEGRAM_BOT_URL = process.env.TELEGRAM_BOT_URL || 'http://localhost:3001';
 
 console.log('📌 Port:', PORT);
 console.log('🤖 AI:', GROQ_API_KEY ? '✅ ENABLED' : '❌ DISABLED');
-console.log('🤖 Telegram Bot:', TELEGRAM_BOT_TOKEN ? '✅ CONFIGURED' : '❌ NOT CONFIGURED');
-console.log('🤖 Admin ID:', ADMIN_TELEGRAM_ID);
+console.log('🤖 Telegram Bot URL:', TELEGRAM_BOT_URL);
 console.log('='.repeat(60));
 
 // Initialize App
@@ -83,9 +79,6 @@ app.use(express.static(path.join(__dirname, 'public'), {
 // Cache for sessions
 const sessionCache = new NodeCache({ stdTTL: 3600, checkperiod: 600 });
 
-// Mapping between sessionId and Telegram chat_id
-const telegramMapping = new Map(); // sessionId -> { chatId, operatorName, status }
-
 // Routes
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
@@ -106,9 +99,8 @@ app.get('/api/health', (req, res) => {
     timestamp: new Date().toISOString(),
     features: {
       ai: !!GROQ_API_KEY,
-      telegram: !!TELEGRAM_BOT_TOKEN,
-      realtime: true,
-      telegramConnected: telegramMapping.size > 0
+      telegram: true,
+      realtime: true
     }
   });
 });
@@ -263,14 +255,6 @@ class SessionManager {
       session.operatorChatId = operatorChatId;
       session.status = 'connected';
       
-      // Store in telegram mapping
-      telegramMapping.set(sessionId, {
-        chatId: operatorChatId,
-        operatorName: operatorName,
-        status: 'accepted',
-        connectedAt: new Date()
-      });
-      
       sessionCache.set(sessionId, session);
       console.log(`👤 Session ${sessionId.substring(0, 8)}... connected to operator ${operatorChatId}`);
     }
@@ -284,8 +268,6 @@ class SessionManager {
       session.operatorId = null;
       session.operatorChatId = null;
       session.status = 'active';
-      
-      telegramMapping.delete(sessionId);
       sessionCache.set(sessionId, session);
     }
     return session;
@@ -302,88 +284,33 @@ class SessionManager {
       totalSessions: this.sessions.size,
       activeSessions: active.length,
       humanConnected: active.filter(s => s.connectedToHuman).length,
-      aiEnabled: !!GROQ_API_KEY,
-      telegramMappings: telegramMapping.size
+      aiEnabled: !!GROQ_API_KEY
     };
   }
 }
 
-// Telegram Service - DIRECT TELEGRAM API
+// Telegram Service
 class TelegramService {
   constructor() {
-    this.botToken = TELEGRAM_BOT_TOKEN;
-    this.adminId = ADMIN_TELEGRAM_ID;
-    this.apiUrl = `https://api.telegram.org/bot${this.botToken}`;
-    
+    this.botUrl = TELEGRAM_BOT_URL;
     this.axios = axios.create({
-      baseURL: this.apiUrl,
+      baseURL: this.botUrl,
       timeout: 10000
     });
   }
 
-  async sendMessage(chatId, text, options = {}) {
-    try {
-      const response = await this.axios.post('/sendMessage', {
-        chat_id: chatId,
-        text: text,
-        parse_mode: options.parse_mode || 'HTML',
-        reply_markup: options.reply_markup
-      });
-      
-      return response.data;
-    } catch (error) {
-      console.error('❌ Telegram sendMessage error:', error.response?.data || error.message);
-      return null;
-    }
-  }
-
   async notifyNewSession(sessionId, userInfo, userMessage) {
     try {
-      const shortId = sessionId.substring(0, 12);
-      const userName = userInfo?.name || 'کاربر سایت';
-      const userEmail = userInfo?.email ? `\n📧 ایمیل: ${userInfo.email}` : '';
-      
-      const message = `🔔 <b>درخواست اتصال جدید</b>
-
-🎫 <b>کد جلسه:</b> <code>${shortId}</code>
-👤 <b>کاربر:</b> ${userName}${userEmail}
-📝 <b>پیام کاربر:</b>
-${userMessage.substring(0, 200)}${userMessage.length > 200 ? '...' : ''}
-
-برای پذیرش گفتگو، روی دکمه زیر کلیک کنید:`;
-      
-      const keyboard = {
-        inline_keyboard: [
-          [
-            { 
-              text: "✅ بله، می‌پذیرم", 
-              callback_data: `accept_${sessionId}` 
-            },
-            { 
-              text: "❌ نه، رد کن", 
-              callback_data: `reject_${sessionId}` 
-            }
-          ]
-        ]
-      };
-      
-      const result = await this.sendMessage(this.adminId, message, {
-        parse_mode: 'HTML',
-        reply_markup: keyboard
+      const response = await this.axios.post('/webhook', {
+        event: 'new_session',
+        data: {
+          sessionId,
+          userInfo,
+          userMessage
+        }
       });
       
-      if (result && result.ok) {
-        // Store message ID for later updates
-        const session = sessionManager.getSession(sessionId);
-        if (session) {
-          session.telegramMessageId = result.result.message_id;
-          sessionCache.set(sessionId, session);
-        }
-        return true;
-      }
-      
-      return false;
-      
+      return response.data.success === true;
     } catch (error) {
       console.error('❌ Telegram notification failed:', error.message);
       return false;
@@ -392,76 +319,28 @@ ${userMessage.substring(0, 200)}${userMessage.length > 200 ? '...' : ''}
 
   async sendToOperator(sessionId, message, userInfo) {
     try {
-      const mapping = telegramMapping.get(sessionId);
-      if (!mapping || !mapping.chatId) {
-        console.error('❌ No operator assigned for session:', sessionId);
-        return { success: false, error: 'اپراتوری برای این جلسه یافت نشد' };
-      }
-      
-      const shortId = sessionId.substring(0, 12);
-      const userName = userInfo?.name || 'کاربر سایت';
-      
-      const formattedMessage = `📨 <b>پیام جدید از کاربر</b>
-
-🎫 <b>کد جلسه:</b> <code>${shortId}</code>
-👤 <b>کاربر:</b> ${userName}
-💬 <b>پیام:</b>
-${message}
-
-✏️ برای پاسخ، پیام خود را مستقیم بنویسید...`;
-      
-      const result = await this.sendMessage(mapping.chatId, formattedMessage, {
-        parse_mode: 'HTML'
+      const response = await this.axios.post('/webhook', {
+        event: 'user_message',
+        data: {
+          sessionId,
+          message,
+          userName: userInfo?.name || 'کاربر سایت'
+        }
       });
       
-      return { 
-        success: !!result, 
-        chatId: mapping.chatId 
-      };
-      
+      return response.data;
     } catch (error) {
       console.error('❌ Send to operator failed:', error.message);
       return { success: false, error: error.message };
     }
   }
 
-  async updateMessage(chatId, messageId, newText, options = {}) {
-    try {
-      const response = await this.axios.post('/editMessageText', {
-        chat_id: chatId,
-        message_id: messageId,
-        text: newText,
-        parse_mode: options.parse_mode || 'HTML',
-        reply_markup: options.reply_markup
-      });
-      
-      return response.data;
-    } catch (error) {
-      console.error('❌ Telegram updateMessage error:', error.message);
-      return null;
-    }
-  }
-
-  async answerCallbackQuery(callbackQueryId, text, showAlert = false) {
-    try {
-      const response = await this.axios.post('/answerCallbackQuery', {
-        callback_query_id: callbackQueryId,
-        text: text,
-        show_alert: showAlert
-      });
-      
-      return response.data;
-    } catch (error) {
-      console.error('❌ Telegram answerCallbackQuery error:', error.message);
-      return null;
-    }
-  }
-
   async checkHealth() {
     try {
-      const response = await this.axios.get('/getMe');
-      return response.data.ok === true;
+      const response = await this.axios.get('/health');
+      return response.data.status === 'OK';
     } catch (error) {
+      console.error('❌ Telegram health check failed:', error.message);
       return false;
     }
   }
@@ -489,7 +368,7 @@ io.on('connection', (socket) => {
       // Add user message to session
       sessionManager.addMessage(sessionId, 'user', message);
       
-      // Forward to Telegram operator
+      // Forward to Telegram bot
       const result = await telegramService.sendToOperator(
         sessionId, 
         message, 
@@ -498,7 +377,6 @@ io.on('connection', (socket) => {
       
       if (result.success) {
         socket.emit('message-sent', { success: true });
-        socket.emit('operator-typing', { typing: false });
       } else {
         socket.emit('message-sent', { 
           success: false, 
@@ -510,13 +388,6 @@ io.on('connection', (socket) => {
         success: false, 
         error: 'هنوز به اپراتور متصل نیستید' 
       });
-    }
-  });
-
-  socket.on('typing', (data) => {
-    const { sessionId, isTyping } = data;
-    if (sessionId) {
-      socket.to(sessionId).emit('operator-typing', { typing: isTyping });
     }
   });
 
@@ -611,7 +482,7 @@ app.post('/api/connect-human', async (req, res) => {
       console.warn('⚠️ Telegram bot is not responding');
       return res.json({
         success: false,
-        error: 'ربات تلگرام در دسترس نیست. لطفاً اطمینان حاصل کنید که توکن معتبر است.',
+        error: 'سرویس اپراتور در دسترس نیست. لطفاً بعداً تلاش کنید.',
         operatorConnected: false
       });
     }
@@ -637,13 +508,6 @@ app.post('/api/connect-human', async (req, res) => {
     );
     
     if (notified) {
-      // Notify user via WebSocket
-      io.to(sessionId).emit('operator-requested', {
-        message: '✅ درخواست شما به اپراتور ارسال شد. منتظر پذیرش باشید...',
-        timestamp: new Date().toISOString(),
-        sessionId: sessionId
-      });
-      
       res.json({
         success: true,
         message: '✅ درخواست شما به اپراتور ارسال شد. منتظر پذیرش باشید...',
@@ -665,6 +529,49 @@ app.post('/api/connect-human', async (req, res) => {
       error: 'خطا در اتصال به اپراتور',
       operatorConnected: false
     });
+  }
+});
+
+// این endpoint باید دقیقاً با endpoint بات تلگرام هماهنگ باشد
+app.post('/webhook', async (req, res) => {
+  try {
+    const { event, data } = req.body;
+    console.log(`📨 Webhook from bot: ${event}`, data);
+    
+    switch (event) {
+      case 'operator_accepted':
+        // Connect session to operator
+        sessionManager.connectToHuman(data.sessionId, data.operatorId, data.operatorName);
+        
+        // Notify user via WebSocket
+        io.to(data.sessionId).emit('operator-connected', {
+          message: '✅ اپراتور درخواست شما را پذیرفت! می‌توانید گفتگو را شروع کنید.',
+          operatorName: data.operatorName,
+          timestamp: new Date().toISOString()
+        });
+        break;
+        
+      case 'operator_rejected':
+        // Notify user via WebSocket
+        io.to(data.sessionId).emit('operator-rejected', {
+          message: '❌ متأسفانه اپراتور در حال حاضر مشغول است. لطفاً بعداً تلاش کنید یا سوال خود را از هوش مصنوعی بپرسید.',
+          timestamp: new Date().toISOString()
+        });
+        break;
+        
+      case 'operator_message_sent':
+        console.log(`✅ Operator ${data.operatorId} sent message for session ${data.sessionId}`);
+        break;
+        
+      default:
+        console.log(`⚠️ Unknown event: ${event}`);
+    }
+    
+    res.json({ success: true });
+    
+  } catch (error) {
+    console.error('❌ Webhook error:', error);
+    res.json({ success: false, error: error.message });
   }
 });
 
@@ -690,11 +597,6 @@ app.post('/api/send-to-user', async (req, res) => {
       });
     }
     
-    // If not already connected, connect now
-    if (!session.connectedToHuman && operatorId) {
-      sessionManager.connectToHuman(sessionId, operatorId, operatorName);
-    }
-    
     // Add operator message
     sessionManager.addMessage(sessionId, 'operator', message);
     
@@ -706,9 +608,6 @@ app.post('/api/send-to-user', async (req, res) => {
       operatorName: operatorName || 'اپراتور',
       sessionId: sessionId
     });
-    
-    // Also emit typing indicator off
-    io.to(sessionId).emit('operator-typing', { typing: false });
     
     res.json({
       success: true,
@@ -722,154 +621,6 @@ app.post('/api/send-to-user', async (req, res) => {
       success: false,
       error: 'خطا در ارسال پیام'
     });
-  }
-});
-
-// Telegram Webhook Endpoint
-app.post('/api/telegram-webhook', async (req, res) => {
-  try {
-    const update = req.body;
-    console.log('📨 Telegram webhook received:', update.update_id);
-    
-    // Handle callback queries (button clicks)
-    if (update.callback_query) {
-      const callback = update.callback_query;
-      const data = callback.data;
-      const chatId = callback.from.id;
-      const messageId = callback.message?.message_id;
-      
-      console.log(`🔄 Callback: ${data} from ${chatId}`);
-      
-      // Answer callback query immediately
-      await telegramService.answerCallbackQuery(callback.id, 'در حال پردازش...');
-      
-      if (data.startsWith('accept_')) {
-        const sessionId = data.replace('accept_', '');
-        const session = sessionManager.getSession(sessionId);
-        
-        if (session) {
-          // Connect session to this operator
-          sessionManager.connectToHuman(sessionId, chatId, callback.from.first_name || 'اپراتور');
-          
-          // Update Telegram message
-          const updatedText = callback.message.text + '\n\n✅ <b>شما این گفتگو را قبول کردید</b>\n\n💬 اکنون می‌توانید پیام بفرستید.';
-          await telegramService.updateMessage(chatId, messageId, updatedText, {
-            parse_mode: 'HTML',
-            reply_markup: { inline_keyboard: [] }
-          });
-          
-          // Notify user via WebSocket
-          io.to(sessionId).emit('operator-connected', {
-            message: '✅ اپراتور درخواست شما را پذیرفت! می‌توانید گفتگو را شروع کنید.',
-            timestamp: new Date().toISOString(),
-            operatorName: callback.from.first_name || 'اپراتور',
-            sessionId: sessionId
-          });
-          
-          console.log(`✅ Session ${sessionId.substring(0, 8)} accepted by ${chatId}`);
-        }
-        
-      } else if (data.startsWith('reject_')) {
-        const sessionId = data.replace('reject_', '');
-        
-        // Update Telegram message
-        const updatedText = callback.message.text + '\n\n❌ <b>شما این گفتگو را رد کردید</b>';
-        await telegramService.updateMessage(chatId, messageId, updatedText, {
-          parse_mode: 'HTML',
-          reply_markup: { inline_keyboard: [] }
-        });
-        
-        // Notify user via WebSocket
-        io.to(sessionId).emit('operator-rejected', {
-          message: '❌ متأسفانه اپراتور در حال حاضر مشغول است. لطفاً بعداً تلاش کنید یا سوال خود را از هوش مصنوعی بپرسید.',
-          timestamp: new Date().toISOString(),
-          sessionId: sessionId
-        });
-        
-        console.log(`❌ Session ${sessionId.substring(0, 8)} rejected by ${chatId}`);
-      }
-    }
-    
-    // Handle text messages from operator
-    if (update.message && update.message.text) {
-      const message = update.message;
-      const chatId = message.chat.id;
-      const text = message.text;
-      
-      // Skip if message is a command
-      if (text.startsWith('/')) {
-        // Handle commands
-        if (text === '/start') {
-          await telegramService.sendMessage(chatId, 
-            '👨‍💼 <b>پنل اپراتور پشتیبانی</b>\n\n'
-            + 'سلام! برای مشاهده جلسات فعال از /sessions استفاده کنید.\n\n'
-            + 'پیام‌های کاربران به صورت خودکار برای شما ارسال می‌شوند.\n'
-            + 'برای پاسخ، کافیست پیام خود را بنویسید.', 
-            { parse_mode: 'HTML' }
-          );
-        } else if (text === '/sessions') {
-          const activeSessions = sessionManager.getActiveSessions()
-            .filter(s => !s.connectedToHuman);
-          
-          if (activeSessions.length === 0) {
-            await telegramService.sendMessage(chatId, 
-              '📭 <b>هیچ جلسه فعالی در انتظار نیست.</b>\n\n'
-              + 'پیام‌های جدید به صورت خودکار برای شما ارسال می‌شوند.',
-              { parse_mode: 'HTML' }
-            );
-          } else {
-            let sessionsText = `<b>📊 جلسات فعال (${activeSessions.length}):</b>\n\n`;
-            
-            activeSessions.forEach((session, index) => {
-              const shortId = session.id.substring(0, 12);
-              const duration = Math.floor((new Date() - session.createdAt) / (1000 * 60));
-              
-              sessionsText += `${index + 1}. <b>جلسه:</b> <code>${shortId}</code>\n`;
-              sessionsText += `   👤 <b>کاربر:</b> ${session.userInfo?.name || 'ناشناس'}\n`;
-              sessionsText += `   ⏱️ <b>مدت:</b> ${duration} دقیقه\n`;
-              sessionsText += `   📝 <b>آخرین پیام:</b> ${session.messages.slice(-1)[0]?.content?.substring(0, 50) || 'بدون پیام'}...\n\n`;
-            });
-            
-            await telegramService.sendMessage(chatId, sessionsText, {
-              parse_mode: 'HTML'
-            });
-          }
-        }
-        return res.json({ ok: true });
-      }
-      
-      // Find which session this operator is handling
-      let targetSessionId = null;
-      for (const [sessionId, mapping] of telegramMapping.entries()) {
-        if (mapping.chatId === chatId) {
-          targetSessionId = sessionId;
-          break;
-        }
-      }
-      
-      if (targetSessionId) {
-        // Send message to user
-        await axios.post(`${req.protocol}://${req.get('host')}/api/send-to-user`, {
-          sessionId: targetSessionId,
-          message: text,
-          operatorId: chatId,
-          operatorName: message.from.first_name || 'اپراتور'
-        });
-      } else {
-        // No active session
-        await telegramService.sendMessage(chatId,
-          '📭 <b>شما جلسه فعالی ندارید.</b>\n\n'
-          + 'منتظر درخواست کاربران باشید یا از /sessions برای مشاهده جلسات فعال استفاده کنید.',
-          { parse_mode: 'HTML' }
-        );
-      }
-    }
-    
-    res.json({ ok: true });
-    
-  } catch (error) {
-    console.error('❌ Telegram webhook error:', error);
-    res.status(500).json({ ok: false, error: error.message });
   }
 });
 
@@ -902,27 +653,6 @@ app.get('/api/stats', (req, res) => {
   res.json(sessionManager.getStats());
 });
 
-// Setup Telegram webhook
-async function setupTelegramWebhook() {
-  try {
-    const webhookUrl = `${req.protocol}://${req.get('host')}/api/telegram-webhook`;
-    console.log(`🌐 Setting Telegram webhook to: ${webhookUrl}`);
-    
-    const response = await axios.post(`${TELEGRAM_BOT_URL}/setWebhook`, {
-      url: webhookUrl,
-      drop_pending_updates: true
-    });
-    
-    if (response.data.ok) {
-      console.log('✅ Telegram webhook set successfully');
-    } else {
-      console.warn('⚠️ Telegram webhook setup failed:', response.data.description);
-    }
-  } catch (error) {
-    console.error('❌ Telegram webhook setup error:', error.message);
-  }
-}
-
 // Start server
 server.listen(PORT, '0.0.0.0', async () => {
   console.log(`
@@ -932,26 +662,23 @@ server.listen(PORT, '0.0.0.0', async () => {
   📍 Port: ${PORT}
   🌐 URL: http://localhost:${PORT}
   🤖 AI: ${GROQ_API_KEY ? '✅ Active' : '❌ Disabled'}
-  📱 Telegram Bot: ${TELEGRAM_BOT_TOKEN ? '✅ Active' : '❌ Disabled'}
-  👤 Admin: ${ADMIN_TELEGRAM_ID}
+  📱 Telegram Bot: ${TELEGRAM_BOT_URL}
   ============================================
   `);
   
   // Check Telegram bot health
   setTimeout(async () => {
-    const healthy = await telegramService.checkHealth();
-    console.log(healthy ? '✅ Telegram bot is healthy' : '❌ Telegram bot not responding');
-    
-    if (healthy) {
-      // Get bot info
-      try {
-        const response = await axios.get(`${TELEGRAM_BOT_URL}/getMe`);
-        console.log(`🤖 Bot: @${response.data.result.username}`);
-      } catch (error) {
-        console.error('❌ Failed to get bot info:', error.message);
+    try {
+      const healthy = await telegramService.checkHealth();
+      if (healthy) {
+        console.log('✅ Telegram bot is healthy and ready');
+      } else {
+        console.log('⚠️ Telegram bot not responding. Make sure it\'s running on port 3001');
       }
+    } catch (error) {
+      console.error('❌ Health check failed:', error.message);
     }
-  }, 2000);
+  }, 3000);
 });
 
 // Error handling
