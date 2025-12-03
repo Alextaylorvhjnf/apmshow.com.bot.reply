@@ -1,51 +1,12 @@
-# Dependencies
 node_modules/
+.env
+*.log
+logs/
+.DS_Store
+.vscode/
+.idea/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-
-# Environment variables
-.env
-.env.local
-.env.production
-.env.staging
-
-# Runtime data
-data/
-logs/
-*.log
-
-# Backup files
-backups/
-
-# OS generated files
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-
-# IDE files
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# Docker
-docker-compose.override.yml
-
-# SSL certificates
-ssl/
-*.pem
-*.key
-
-# Build outputs
-dist/
-build/
-*.exe
-
-# Temp files
-tmp/
-temp/
+*.env.local
+*.env.*.local
