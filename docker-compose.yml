@@ -1,30 +1,25 @@
 version: '3.8'
 
 services:
-  chatbot:
+  backend:
     build: .
     ports:
       - "3000:3000"
     environment:
       - NODE_ENV=production
-      - PORT=3000
       - GROQ_API_KEY=${GROQ_API_KEY}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - ADMIN_TELEGRAM_ID=${ADMIN_TELEGRAM_ID}
-    env_file:
-      - .env
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "node", "-e", "const http = require('http'); const req = http.get('http://localhost:3000/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1); }); req.on('error', () => process.exit(1));"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-    volumes:
-      - ./logs:/app/logs
-    networks:
-      - chatbot-network
 
-networks:
-  chatbot-network:
-    driver: bridge
+  telegram-bot:
+    build: .
+    command: sh -c "cd /app/telegram && node bot.js"
+    environment:
+      - NODE_ENV=production
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - ADMIN_TELEGRAM_ID=${ADMIN_TELEGRAM_ID}
+      - BACKEND_URL=http://backend:3000
+    depends_on:
+      - backend
+    restart: unless-stopped
