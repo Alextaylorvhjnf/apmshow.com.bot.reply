@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>پشتیبان هوشمند</title>
+    <link rel="stylesheet" href="widget.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div id="chat-widget-container">
+        <!-- Chat Toggle Button -->
+        <button id="chat-toggle" class="chat-toggle">
+            <i class="fas fa-comments"></i>
+            <span class="notification-badge" id="notification-badge">0</span>
+        </button>
+
+        <!-- Chat Window -->
+        <div id="chat-window" class="chat-window">
+            <!-- Chat Header -->
+            <div class="chat-header">
+                <div class="header-content">
+                    <div class="logo">
+                        <i class="fas fa-robot"></i>
+                        <span>پشتیبان هوشمند</span>
+                    </div>
+                    <div class="status" id="chat-status">
+                        <span class="status-dot online"></span>
+                        <span>آنلاین</span>
+                    </div>
+                </div>
+                <button id="close-chat" class="close-btn">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+
+            <!-- Chat Messages Container -->
+            <div id="chat-messages" class="chat-messages">
+                <!-- Welcome Message -->
+                <div class="message-wrapper ai">
+                    <div class="message-bubble ai">
+                        <div class="message-sender">
+                            <i class="fas fa-robot"></i>
+                            <span>پشتیبان هوشمند</span>
+                        </div>
+                        <div class="message-text">
+                            سلام! 👋 من دستیار هوشمند شما هستم. چگونه می‌توانم کمک کنم؟
+                        </div>
+                        <div class="message-time">همین الان</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Typing Indicator -->
+            <div id="typing-indicator" class="typing-indicator">
+                <div class="typing-dots">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+                <span>در حال تایپ...</span>
+            </div>
+
+            <!-- Connection Status -->
+            <div id="connection-status" class="connection-status">
+                <div class="status-message" id="status-message">
+                    <i class="fas fa-wifi"></i>
+                    <span>در حال اتصال...</span>
+                </div>
+            </div>
+
+            <!-- Chat Input Area -->
+            <div class="chat-input-area">
+                <div class="input-wrapper">
+                    <textarea 
+                        id="message-input" 
+                        placeholder="پیام خود را بنویسید..."
+                        rows="1"
+                        maxlength="1000"></textarea>
+                    <button id="send-button" class="send-btn">
+                        <i class="fas fa-paper-plane"></i>
+                    </button>
+                </div>
+                <div class="input-footer">
+                    <small class="hint">
+                        <i class="fas fa-info-circle"></i>
+                        برای اتصال به اپراتور انسانی از دکمه زیر استفاده کنید
+                    </small>
+                    <button id="human-support-btn" class="human-support-btn">
+                        <i class="fas fa-user-headset"></i>
+                        اتصال به اپراتور انسانی
+                    </button>
+                </div>
+            </div>
+
+            <!-- Operator Info -->
+            <div id="operator-info" class="operator-info hidden">
+                <div class="operator-card">
+                    <div class="operator-avatar">
+                        <i class="fas fa-user-tie"></i>
+                    </div>
+                    <div class="operator-details">
+                        <h4><i class="fas fa-shield-alt"></i> اپراتور انسانی متصل</h4>
+                        <p>در حال حاضر با پشتیبان انسانی در ارتباط هستید</p>
+                        <div class="operator-status">
+                            <span class="status-dot active"></span>
+                            <small>آنلاین</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script src="widget.js"></script>
+</body>
+</html>
