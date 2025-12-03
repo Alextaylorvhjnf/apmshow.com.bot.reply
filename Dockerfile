@@ -1,27 +1,27 @@
-# Dockerfile
 FROM node:18-alpine
 
 WORKDIR /app
 
-# Copy package.json files
-COPY backend/package.json ./backend/package.json
-COPY telegram/package.json ./telegram/package.json
+# نصب وابستگی‌های سیستم
+RUN apk add --no-cache bash
 
-# Install dependencies
-RUN cd backend && npm install --production
-RUN cd telegram && npm install --production
+# کپی package.json اول برای نصب وابستگی‌ها
+COPY backend/package*.json ./backend/
+COPY telegram/package*.json ./telegram/
 
-# Copy source code
+# نصب وابستگی‌ها در ریشه
+RUN npm init -y && \
+    cd backend && npm install && \
+    cd ../telegram && npm install
+
+# کپی تمام فایل‌ها
 COPY . .
 
-# Create a startup script
-RUN echo '#!/bin/sh\n\
-cd /app/backend\n\
-node server.js & \n\
-cd /app/telegram\n\
-node bot.js \n\
-wait' > /app/start.sh && chmod +x /app/start.sh
+# ساخت پوشه برای لاگ
+RUN mkdir -p logs
 
+# پورت اکسپوز
 EXPOSE 3000
 
-CMD ["sh", "/app/start.sh"]
+# دستور اجرا
+CMD ["sh", "-c", "cd backend && node server.js & cd ../telegram && node bot.js && wait"]
