@@ -362,60 +362,70 @@ class ChatWidget {
         }
     }
     
-    async connectToHuman() {
-        if (this.state.operatorConnected) return;
+   async connectToHuman() {
+    if (this.state.operatorConnected || this.state.isConnecting) return;
+    
+    this.state.isConnecting = true;
+    this.elements.humanSupportBtn.disabled = true;
+    this.elements.humanSupportBtn.innerHTML = `
+        <i class="fas fa-spinner fa-spin"></i>
+        در حال اتصال...
+    `;
+    
+    try {
+        const userInfo = {
+            name: 'کاربر سایت',
+            page: window.location.href,
+            userAgent: navigator.userAgent,
+            referrer: document.referrer
+        };
         
-        this.elements.humanSupportBtn.disabled = true;
-        this.elements.humanSupportBtn.innerHTML = `
-            <i class="fas fa-spinner fa-spin"></i>
-            در حال اتصال...
-        `;
+        console.log('👤 Requesting human connection...');
         
-        try {
-            const userInfo = {
-                name: 'کاربر سایت',
-                page: window.location.href,
-                userAgent: navigator.userAgent
-            };
+        const response = await fetch(`${this.options.backendUrl}/api/connect-human`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                sessionId: this.state.sessionId,
+                userInfo: userInfo
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            this.state.operatorConnected = true;
+            this.elements.operatorInfo.classList.add('active');
+            this.addMessage('system', data.message);
             
-            const response = await fetch(`${this.options.backendUrl}/api/connect-human`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    sessionId: this.state.sessionId,
-                    message: 'درخواست اتصال به اپراتور انسانی',
-                    userInfo: userInfo
-                })
-            });
+            // Update button
+            this.elements.humanSupportBtn.innerHTML = `
+                <i class="fas fa-user-check"></i>
+                متصل به اپراتور
+            `;
+            this.elements.humanSupportBtn.style.background = 'linear-gradient(145deg, #2ecc71, #27ae60)';
+            this.elements.humanSupportBtn.disabled = true;
             
-            const data = await response.json();
-            
-            if (data.success) {
-                this.state.operatorConnected = true;
-                this.elements.operatorInfo.classList.add('active');
-                this.addMessage('system', 'در حال اتصال به اپراتور انسانی...');
-                
-                // Update button
-                this.elements.humanSupportBtn.innerHTML = `
-                    <i class="fas fa-user-check"></i>
-                    متصل به اپراتور
-                `;
-                this.elements.humanSupportBtn.style.background = '#2ecc71';
-            } else {
-                this.addMessage('system', 'خطا در اتصال به اپراتور');
-                this.resetHumanSupportButton();
+            console.log('✅ Connected to human operator');
+        } else {
+            this.addMessage('system', `❌ ${data.error || 'خطا در اتصال به اپراتور'}`);
+            if (data.details) {
+                console.error('Connection error details:', data.details);
             }
-            
-        } catch (error) {
-            console.error('Connect to human error:', error);
-            this.addMessage('system', 'خطا در ارتباط با سرور');
             this.resetHumanSupportButton();
-        } finally {
-            this.elements.humanSupportBtn.disabled = false;
         }
+        
+    } catch (error) {
+        console.error('❌ Connect to human error:', error);
+        this.addMessage('system', '❌ خطا در ارتباط با سرور');
+        this.resetHumanSupportButton();
+    } finally {
+        this.state.isConnecting = false;
+        this.elements.humanSupportBtn.disabled = false;
     }
+}
     
     resetHumanSupportButton() {
         this.elements.humanSupportBtn.innerHTML = `
