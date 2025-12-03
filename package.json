@@ -1,30 +1,38 @@
 {
   "name": "ai-chatbot-telegram",
-  "version": "3.0.0",
-  "description": "AI Chatbot with Real Telegram Support",
+  "version": "2.0.0",
+  "description": "AI Chatbot with Telegram Operator Support",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "telegram": "node telegram-bot.js",
-    "dev": "nodemon server.js",
-    "start:all": "concurrently \"npm start\" \"npm run telegram\""
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:telegram\"",
+    "dev:server": "nodemon server.js",
+    "dev:telegram": "nodemon telegram-bot.js",
+    "test": "echo \"No tests specified\" && exit 0"
   },
   "dependencies": {
     "express": "^4.18.2",
-    "cors": "^2.8.5",
-    "dotenv": "^16.3.1",
-    "axios": "^1.6.0",
     "socket.io": "^4.7.2",
-    "telegraf": "^4.15.3",
-    "uuid": "^9.0.1",
+    "axios": "^1.6.2",
+    "telegraf": "^4.12.2",
+    "uuid": "^9.0.0",
+    "cors": "^2.8.5",
     "helmet": "^7.0.0",
+    "dotenv": "^16.3.1",
     "node-cache": "^5.1.2"
   },
   "devDependencies": {
     "nodemon": "^3.0.1",
-    "concurrently": "^8.2.2"
+    "concurrently": "^8.2.1"
   },
-  "engines": {
-    "node": ">=18.0.0"
-  }
+  "keywords": [
+    "ai",
+    "chatbot",
+    "telegram",
+    "support",
+    "real-time"
+  ],
+  "author": "Your Name",
+  "license": "MIT"
 }
