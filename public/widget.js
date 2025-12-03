@@ -319,4 +319,214 @@ class ChatWidget {
             if (data.success) {
                 this.addMessage('assistant', data.message);
                 
-                //
+                // If AI suggests human support
+                if (data.requiresHuman) {
+                    this.elements.humanSupportBtn.innerHTML = `
+                        <i class="fas fa-user-headset"></i>
+                        اتصال به اپراتور انسانی (پیشنهاد سیستم)
+                    `;
+                    this.elements.humanSupportBtn.style.background = '#ff9500';
+                }
+            } else {
+                this.addMessage('system', data.message);
+            }
+            
+        } catch (error) {
+            console.error('AI request error:', error);
+            this.addMessage('system', 'خطا در ارتباط با سرور. لطفاً دوباره تلاش کنید.');
+        }
+    }
+    
+    async sendToOperator(message) {
+        try {
+            const response = await fetch(`${this.options.backendUrl}/api/send-to-operator`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    sessionId: this.state.sessionId,
+                    message: message
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (!data.success) {
+                this.addMessage('system', 'خطا در ارسال پیام به اپراتور');
+            }
+            
+        } catch (error) {
+            console.error('Operator request error:', error);
+            this.addMessage('system', 'خطا در ارتباط با اپراتور');
+        }
+    }
+    
+    async connectToHuman() {
+        if (this.state.operatorConnected) return;
+        
+        this.elements.humanSupportBtn.disabled = true;
+        this.elements.humanSupportBtn.innerHTML = `
+            <i class="fas fa-spinner fa-spin"></i>
+            در حال اتصال...
+        `;
+        
+        try {
+            const userInfo = {
+                name: 'کاربر سایت',
+                page: window.location.href,
+                userAgent: navigator.userAgent
+            };
+            
+            const response = await fetch(`${this.options.backendUrl}/api/connect-human`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    sessionId: this.state.sessionId,
+                    message: 'درخواست اتصال به اپراتور انسانی',
+                    userInfo: userInfo
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                this.state.operatorConnected = true;
+                this.elements.operatorInfo.classList.add('active');
+                this.addMessage('system', 'در حال اتصال به اپراتور انسانی...');
+                
+                // Update button
+                this.elements.humanSupportBtn.innerHTML = `
+                    <i class="fas fa-user-check"></i>
+                    متصل به اپراتور
+                `;
+                this.elements.humanSupportBtn.style.background = '#2ecc71';
+            } else {
+                this.addMessage('system', 'خطا در اتصال به اپراتور');
+                this.resetHumanSupportButton();
+            }
+            
+        } catch (error) {
+            console.error('Connect to human error:', error);
+            this.addMessage('system', 'خطا در ارتباط با سرور');
+            this.resetHumanSupportButton();
+        } finally {
+            this.elements.humanSupportBtn.disabled = false;
+        }
+    }
+    
+    resetHumanSupportButton() {
+        this.elements.humanSupportBtn.innerHTML = `
+            <i class="fas fa-user-headset"></i>
+            اتصال به اپراتور انسانی
+        `;
+        this.elements.humanSupportBtn.style.background = '#ff6b6b';
+    }
+    
+    handleOperatorConnected(data) {
+        this.state.operatorConnected = true;
+        this.elements.operatorInfo.classList.add('active');
+        this.addMessage('operator', data.message);
+        this.resetHumanSupportButton();
+    }
+    
+    addMessage(type, text) {
+        const messageEl = document.createElement('div');
+        messageEl.className = `message ${type}`;
+        
+        const time = new Date().toLocaleTimeString('fa-IR', {
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+        
+        let senderIcon = '';
+        let senderText = '';
+        
+        switch(type) {
+            case 'user':
+                senderIcon = '<i class="fas fa-user"></i>';
+                senderText = 'شما';
+                break;
+            case 'assistant':
+                senderIcon = '<i class="fas fa-robot"></i>';
+                senderText = 'پشتیبان هوشمند';
+                break;
+            case 'operator':
+                senderIcon = '<i class="fas fa-user-tie"></i>';
+                senderText = 'اپراتور انسانی';
+                break;
+        }
+        
+        messageEl.innerHTML = `
+            ${senderIcon ? `
+            <div class="message-sender">
+                ${senderIcon}
+                <span>${senderText}</span>
+            </div>
+            ` : ''}
+            <div class="message-text">${this.escapeHtml(text)}</div>
+            <div class="message-time">${time}</div>
+        `;
+        
+        this.elements.messagesContainer.appendChild(messageEl);
+        this.elements.messagesContainer.scrollTop = this.elements.messagesContainer.scrollHeight;
+        
+        // Add to state
+        this.state.messages.push({ type, text, time });
+        
+        // Show notification if chat is closed
+        if (!this.state.isOpen) {
+            this.showNotification();
+        }
+    }
+    
+    setTyping(typing) {
+        this.state.isTyping = typing;
+        
+        if (typing) {
+            this.elements.typingIndicator.classList.add('active');
+            this.elements.sendBtn.disabled = true;
+            this.elements.messageInput.disabled = true;
+        } else {
+            this.elements.typingIndicator.classList.remove('active');
+            this.elements.sendBtn.disabled = false;
+            this.elements.messageInput.disabled = false;
+            this.elements.messageInput.focus();
+        }
+    }
+    
+    showNotification() {
+        const badge = this.elements.notificationBadge;
+        const count = parseInt(badge.textContent) || 0;
+        badge.textContent = count + 1;
+        badge.style.display = 'flex';
+    }
+    
+    resetNotification() {
+        const badge = this.elements.notificationBadge;
+        badge.textContent = '0';
+        badge.style.display = 'none';
+    }
+    
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+}
+
+// Initialize when DOM is ready
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+        window.ChatWidget = new ChatWidget();
+    });
+} else {
+    window.ChatWidget = new ChatWidget();
+}
+
+// Global initialization function
+window.initChatWidget = function(options) {
+    return new ChatWidget(options);
+};
