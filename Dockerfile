@@ -2,26 +2,20 @@ FROM node:18-alpine
 
 WORKDIR /app
 
-# نصب وابستگی‌های سیستم
-RUN apk add --no-cache bash
+# کپی package.json
+COPY package*.json ./
 
-# کپی package.json اول برای نصب وابستگی‌ها
-COPY backend/package*.json ./backend/
-COPY telegram/package*.json ./telegram/
-
-# نصب وابستگی‌ها در ریشه
-RUN npm init -y && \
-    cd backend && npm install && \
-    cd /telegram && npm install
+# نصب وابستگی‌ها
+RUN npm install
 
 # کپی تمام فایل‌ها
 COPY . .
 
-# ساخت پوشه برای لاگ
-RUN mkdir -p logs
+# ساخت پوشه‌های لازم
+RUN mkdir -p public logs
 
 # پورت اکسپوز
 EXPOSE 3000
 
 # دستور اجرا
-CMD ["sh", "-c", "cd backend && node server.js & cd ../telegram && node bot.js && wait"]
+CMD ["node", "server.js"]
