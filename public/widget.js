@@ -297,13 +297,14 @@ this.state.socket.on('operator-rejected', (data) => {
         this.setTyping(true);
       
         try {
-            if (this.state.operatorConnected) {
-                // Send to operator via WebSocket
-                this.state.socket.emit('send-to-operator', {
-                    sessionId: this.state.sessionId,
-                    message: message
-                });
-            } else {
+        if (this.state.operatorConnected) {
+    // مهم: نام رویداد باید 'user-message' باشه، نه 'send-to-operator'
+    this.state.socket.emit('user-message', {
+        sessionId: this.state.sessionId,
+        message: message
+    });
+    console.log('پیام به اپراتور انسانی ارسال شد (user-message)');
+} else {
                 // Send to AI
                 await this.sendToAI(message);
             }
