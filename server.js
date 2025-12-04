@@ -30,32 +30,41 @@ app.use(express.urlencoded({ extended: true }));
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.static(path.join(__dirname, 'public')));
 
+// ==================== کش و سشن ====================
 const cache = new NodeCache({ stdTTL: 3600 });
-const botSessions = new Map(); // shortId → { fullId, chatId }
+const botSessions = new Map(); // shortId → { fullId, chatId, userInfo }
 
 // کوتاه کردن آیدی
 const shortId = id => id.slice(0, 12);
 
-// هوش مصنوعی
+// ==================== هوش مصنوعی ====================
 const getAI = async (msg) => {
   if (!GROQ_API_KEY) return { success: false, requiresHuman: true };
   try {
     const res = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
       model: 'llama-3.3-70b-versatile',
-      messages: [{ role: 'system', content: 'فقط فارسی جواب بده، پشتیبان هوشمند باش.' }, { role: 'user', content: msg }],
+      messages: [
+        { role: 'system', content: 'فقط فارسی جواب بده. پشتیبان هوشمند و مودب باش.' },
+        { role: 'user', content: msg }
+      ],
       temperature: 0.7,
       max_tokens: 800
     }, { headers: { Authorization: `Bearer ${GROQ_API_KEY}` } });
     const text = res.data.choices[0].message.content.trim();
     const needHuman = /اپراتور|انسانی|نمی‌دونم|نمی‌تونم/i.test(text);
     return { success: true, message: text, requiresHuman: needHuman };
-  } catch { return { success: false, requiresHuman: true }; }
+  } catch {
+    return { success: false, requiresHuman: true };
+  }
 };
 
-// سشن
+// ==================== سشن ====================
 const getSession = id => {
   let s = cache.get(id);
-  if (!s) { s = { id, messages: [], userInfo: {}, connectedToHuman: false }; cache.set(id, s); }
+  if (!s) {
+    s = { id, messages: [], userInfo: {}, connectedToHuman: false };
+    cache.set(id, s);
+  }
   s.lastActivity = new Date();
   return s;
 };
@@ -63,7 +72,7 @@ const getSession = id => {
 // ==================== ربات تلگرام ====================
 const bot = new Telegraf(TELEGRAM_BOT_TOKEN);
 
-// پذیرش
+// پذیرش درخواست
 bot.action(/accept_(.+)/, async (ctx) => {
   const short = ctx.match[1];
   const info = botSessions.get(short);
@@ -72,28 +81,30 @@ bot.action(/accept_(.+)/, async (ctx) => {
   botSessions.set(short, { ...info, chatId: ctx.chat.id });
   getSession(info.fullId).connectedToHuman = true;
 
-  await ctx.answerCbQuery('✅ پذیرفته شد');
-  // بدون MarkdownV2 و بدون مشکل
-  await ctx.editMessageText(`${ctx.callbackQuery.message.text}\n\n✅ شما این گفتگو را پذیرفتید`, { parse_mode: '' });
+  await ctx.answerCbQuery('پذیرفته شد ✅');
+  await ctx.editMessageText(ctx.callbackQuery.message.text + '\n\n✅ شما این گفتگو را پذیرفتید');
   io.to(info.fullId).emit('operator-connected', { message: 'اپراتور متصل شد!' });
 });
 
-// رد
+// رد درخواست
 bot.action(/reject_(.+)/, async (ctx) => {
   const short = ctx.match[1];
   botSessions.delete(short);
-  await ctx.answerCbQuery('❌ رد شد');
-  await ctx.editMessageText(`${ctx.callbackQuery.message.text}\n\n❌ رد شد`, { parse_mode: '' });
-  io.to(botSessions.get(short)?.fullId || '').emit('operator-rejected');
+  await ctx.answerCbQuery('رد شد ❌');
+  await ctx.editMessageText(ctx.callbackQuery.message.text + '\n\n❌ رد شد');
 });
 
-// پیام اپراتور → ویجت
+// پیام اپراتور → کاربر سایت
 bot.on('text', async (ctx) => {
   if (ctx.message.text.startsWith('/')) return;
+
   const entry = [...botSessions.entries()].find(([_, v]) => v.chatId === ctx.chat.id);
   if (!entry) return;
+
   const fullId = entry[1].fullId;
-  io.to(fullId).emit('operator-message', { message: ctx.message.text });
+  const message = ctx.message.text;
+
+  io.to(fullId).emit('operator-message', { message });
   ctx.reply('ارسال شد ✅');
 });
 
@@ -108,9 +119,9 @@ app.post('/webhook', async (req, res) => {
     if (req.body.event === 'new_session') {
       const { sessionId, userInfo, userMessage } = req.body.data;
       const short = shortId(sessionId);
-      botSessions.set(short, { fullId: sessionId, userInfo });
+      botSessions.set(short, { fullId: sessionId, userInfo: userInfo || {} });
 
-      const text = `درخواست جدید\n\nکد: ${short}\nنام: ${userInfo?.name || 'ناشناس'}\nپیام: ${userMessage || 'اتصال به اپراتور'}`;
+      const text = `درخواست پشتیبانی جدید\n\nکد جلسه: ${short}\nنام: ${userInfo?.name || 'ناشناس'}\nپیام اول: ${userMessage || 'درخواست اتصال به اپراتور'}`;
 
       await bot.telegram.sendMessage(ADMIN_TELEGRAM_ID, text, {
         reply_markup: {
@@ -123,19 +134,31 @@ app.post('/webhook', async (req, res) => {
     }
     res.json({ success: true });
   } catch (err) {
-    console.error(err);
+    console.error('خطا در /webhook:', err);
     res.status(500).json({ success: false });
   }
 });
 
-// ==================== API ویجت ====================
+// ==================== API چت ویجت (مهم: دوطرفه!) ====================
 app.post('/api/chat', async (req, res) => {
   const { message, sessionId } = req.body;
+  if (!message || !sessionId) return res.status(400).json({ error: 'داده ناقص' });
+
   const session = getSession(sessionId);
   session.messages.push({ role: 'user', content: message });
 
-  if (session.connectedToHuman) return res.json({ operatorConnected: true });
+  // اگر به اپراتور وصله → پیام رو به تلگرام بفرست
+  if (session.connectedToHuman) {
+    const entry = [...botSessions.entries()].find(([_, v]) => v.fullId === sessionId);
+    if (entry) {
+      const operatorChatId = entry[1].chatId;
+      const short = shortId(sessionId);
+      await bot.telegram.sendMessage(operatorChatId, `پیام جدید از کاربر\n\nکد: \`${short}\`\n\n${message}`, { parse_mode: 'Markdown' }).catch(() => {});
+    }
+    return res.json({ operatorConnected: true });
+  }
 
+  // در غیر این صورت → هوش مصنوعی
   const ai = await getAI(message);
   if (ai.success && !ai.requiresHuman) {
     session.messages.push({ role: 'assistant', content: ai.message });
@@ -145,6 +168,7 @@ app.post('/api/chat', async (req, res) => {
   }
 });
 
+// اتصال به اپراتور
 app.post('/api/connect-human', async (req, res) => {
   const { sessionId, userInfo } = req.body;
   const session = getSession(sessionId);
@@ -158,14 +182,17 @@ app.post('/api/connect-human', async (req, res) => {
   res.json({ success: true, pending: true });
 });
 
+// ارسال پیام از ربات به ویجت (برای مواقع خاص)
 app.post('/api/send-to-user', (req, res) => {
   const { sessionId, message } = req.body;
   io.to(sessionId).emit('operator-message', { message });
   res.json({ success: true });
 });
 
+// صفحه اصلی
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
+// سوکت
 io.on('connection', socket => {
   socket.on('join-session', id => socket.join(id));
 });
@@ -174,7 +201,8 @@ io.on('connection', socket => {
 server.listen(PORT, '0.0.0.0', async () => {
   console.log(`سرور روی پورت ${PORT} فعال شد`);
 
-  if (!BASE_URL || !TELEGRAM_BOT_TOKEN) {
+  if (!BASE_URL || !TELEGRAM_BOT_TOKEN || !ADMIN_TELEGRAM_ID) {
+    console.log('Polling mode');
     bot.launch();
     return;
   }
@@ -185,11 +213,13 @@ server.listen(PORT, '0.0.0.0', async () => {
     if (info.url !== url) {
       await new Promise(r => setTimeout(r, 3000));
       await bot.telegram.setWebhook(url);
-      console.log('وب‌هوک تنظیم شد');
+      console.log('وب‌هوک تنظیم شد:', url);
+    } else {
+      console.log('وب‌هوک قبلاً درست بود');
     }
-    bot.telegram.sendMessage(ADMIN_TELEGRAM_ID, `ربات آماده است\n${url}`);
+    await bot.telegram.sendMessage(ADMIN_TELEGRAM_ID, `ربات آماده است ✅\n${url}`);
   } catch (err) {
-    console.error('وب‌هوک خطا داد، polling فعال شد');
+    console.error('وب‌هوک خطا داد → Polling فعال شد');
     bot.launch();
   }
 });
