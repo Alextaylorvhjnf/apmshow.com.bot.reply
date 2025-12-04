@@ -31,8 +31,7 @@ class ChatWidget {
         this.injectHTML();
         this.initEvents();
         this.connectWebSocket();
-
-        console.log('Chat Widget initialized • Session:', this.state.sessionId);
+        console.log('Chat Widget آماده شد • جلسه:', this.state.sessionId);
     }
 
     generateSessionId() {
@@ -55,28 +54,43 @@ class ChatWidget {
 
         const style = document.createElement('style');
         style.textContent = `
-            @keyframes pulse {
+            .chat-toggle-btn {
+                position: relative !important;
+                display: inline-flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+            }
+            .notification-badge {
+                position: absolute !important;
+                top: -8px !important;
+                right: -8px !important;
+                background: #e74c3c !important;
+                color: white !important;
+                font-size: 11px !important;
+                font-weight: bold !important;
+                min-width: 20px !important;
+                height: 20px !important;
+                border-radius: 50% !important;
+                display: flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                border: 3px solid white !important;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.4) !important;
+                z-index: 9999 !important;
+                animation: pulse-badge 1.5s infinite !important;
+            }
+            @keyframes pulse-badge {
                 0% { transform: scale(1); }
-                50% { transform: scale(1.18); }
+                50% { transform: scale(1.15); }
                 100% { transform: scale(1); }
             }
-            .chat-toggle-btn.pulse { animation: pulse 0.6s ease-in-out; }
-            .notification-badge {
-                position: absolute;
-                top: -8px;
-                right: -8px;
-                background: #e74c3c;
-                color: white;
-                font-size: 11px;
-                font-weight: bold;
-                min-width: 18px;
-                height: 18px;
-                border-radius: 50%;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                border: 2px solid white;
-                box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            @keyframes pulse {
+                0% { transform: scale(1); }
+                50% { transform: scale(1.2); }
+                100% { transform: scale(1); }
+            }
+            .chat-toggle-btn.pulse {
+                animation: pulse 0.6s ease-in-out;
             }
         `;
         document.head.appendChild(style);
@@ -88,7 +102,7 @@ class ChatWidget {
         this.container.innerHTML = `
             <button class="chat-toggle-btn">
                 <i class="fas fa-comment-dots"></i>
-                <span class="notification-badge" style="display: none">0</span>
+                <span class="notification-badge" style="display: none;">0</span>
             </button>
 
             <div class="chat-window">
@@ -179,7 +193,7 @@ class ChatWidget {
             this.state.socket = io(wsUrl, { transports: ['websocket', 'polling'], reconnectionAttempts: 5 });
 
             this.state.socket.on('connect', () => {
-                console.log('WebSocket متصل شد');
+                console.log('سوکت متصل شد');
                 this.state.isConnected = true;
                 this.updateConnectionStatus(true);
                 this.state.socket.emit('join-session', this.state.sessionId);
@@ -188,7 +202,7 @@ class ChatWidget {
             this.state.socket.on('operator-connected', data => this.handleOperatorConnected(data));
             this.state.socket.on('operator-message', data => this.addMessage('operator', data.message));
             this.state.socket.on('connect_error', () => this.updateConnectionStatus(false));
-        } catch (err) { console.error('خطا در اتصال سوکت:', err); }
+        } catch (err) { console.error('خطا در سوکت:', err); }
     }
 
     updateConnectionStatus(connected) {
@@ -248,13 +262,7 @@ class ChatWidget {
                 body: JSON.stringify({ message, sessionId: this.state.sessionId })
             });
             const data = await res.json();
-            if (data.success) {
-                this.addMessage('assistant', data.message);
-                if (data.requiresHuman) {
-                    this.elements.humanSupportBtn.innerHTML = `<i class="fas fa-user-headset"></i> اتصال به اپراتور (پیشنهاد سیستم)`;
-                    this.elements.humanSupportBtn.style.background = '#ff9500';
-                }
-            }
+            if (data.success) this.addMessage('assistant', data.message);
         } catch (err) {
             this.addMessage('system', 'خطا در ارتباط با سرور');
         }
@@ -267,18 +275,16 @@ class ChatWidget {
         this.elements.humanSupportBtn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> در حال اتصال...`;
 
         try {
-            const userInfo = { name: 'کاربر سایت', page: location.href };
             const res = await fetch(`${this.options.backendUrl}/api/connect-human`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ sessionId: this.state.sessionId, userInfo })
+                body: JSON.stringify({ sessionId: this.state.sessionId, userInfo: { name: 'کاربر سایت' } })
             });
             const data = await res.json();
-
             if (data.success) {
                 this.state.operatorConnected = true;
                 this.elements.operatorInfo.classList.add('active');
-                this.addMessage('system', 'در حال اتصال به اپراتور انسانی...');
+                this.addMessage('system', 'در حال اتصال به اپراتور...');
                 this.elements.humanSupportBtn.innerHTML = `<i class="fas fa-user-check"></i> متصل به اپراتور`;
                 this.elements.humanSupportBtn.style.background = 'linear-gradient(145deg, #2ecc71, #27ae60)';
                 this.elements.humanSupportBtn.disabled = true;
@@ -305,17 +311,16 @@ class ChatWidget {
         this.addMessage('system', data.message || 'اپراتور متصل شد!');
     }
 
-    // صدای دینگ آیفون (Tri-tone) — دقیق و حرفه‌ای
+    // صدای دینگ آیفون — واقعی و حرفه‌ای
     playNotificationSound() {
         const audio = new Audio('https://cdn.jsdelivr.net/gh/nokeedev/iphone-sms-tri-tone@master/tri-tone.mp3');
-        audio.volume = 0.7;
-        audio.play().catch(() => { /* مرورگر ممکنه بلاک کنه تا کاربر تعامل داشته باشه */ });
+        audio.volume = 0.8;
+        audio.play().catch(() => {});
     }
 
-    showNotification(count = 1) {
-        let current = parseInt(this.elements.notificationBadge.textContent) || 0;
-        current += count;
-        this.elements.notificationBadge.textContent = current;
+    showNotification() {
+        let count = (parseInt(this.elements.notificationBadge.textContent) || 0) + 1;
+        this.elements.notificationBadge.textContent = count > 99 ? '99+' : count;
         this.elements.notificationBadge.style.display = 'flex';
         this.elements.toggleBtn.classList.add('pulse');
         setTimeout(() => this.elements.toggleBtn.classList.remove('pulse'), 600);
@@ -347,7 +352,6 @@ class ChatWidget {
     addMessage(type, text) {
         const el = document.createElement('div');
         el.className = `message ${type}`;
-
         const time = new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
 
         let icon = '', sender = '';
@@ -365,7 +369,6 @@ class ChatWidget {
         this.elements.messagesContainer.scrollTop = this.elements.messagesContainer.scrollHeight;
         this.state.messages.push({ type, text, time });
 
-        // فقط پیام‌های غیر از کاربر → صدا + نوتیفیکیشن
         if (type !== 'user') {
             this.playNotificationSound();
             if (!this.state.isOpen) this.showNotification();
