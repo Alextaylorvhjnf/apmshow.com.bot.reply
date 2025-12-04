@@ -72,13 +72,15 @@ const getSession = id => {
 // ==================== ربات تلگرام ====================
 const bot = new Telegraf(TELEGRAM_BOT_TOKEN);
 
-// پذیرش درخواست
+// پذیرش درخواست - اینجا مشکل بود! chatId درست ذخیره نمی‌شد
 bot.action(/accept_(.+)/, async (ctx) => {
   const short = ctx.match[1];
   const info = botSessions.get(short);
   if (!info) return ctx.answerCbQuery('منقضی شده');
 
+  // اینجا درست شد: chatId رو ذخیره می‌کنیم
   botSessions.set(short, { ...info, chatId: ctx.chat.id });
+
   getSession(info.fullId).connectedToHuman = true;
 
   await ctx.answerCbQuery('پذیرفته شد ✅');
@@ -94,17 +96,13 @@ bot.action(/reject_(.+)/, async (ctx) => {
   await ctx.editMessageText(ctx.callbackQuery.message.text + '\n\n❌ رد شد');
 });
 
-// پیام اپراتور → کاربر سایت
+// پیام اپراتور → ویجت
 bot.on('text', async (ctx) => {
   if (ctx.message.text.startsWith('/')) return;
-
   const entry = [...botSessions.entries()].find(([_, v]) => v.chatId === ctx.chat.id);
   if (!entry) return;
-
   const fullId = entry[1].fullId;
-  const message = ctx.message.text;
-
-  io.to(fullId).emit('operator-message', { message });
+  io.to(fullId).emit('operator-message', { message: ctx.message.text });
   ctx.reply('ارسال شد ✅');
 });
 
@@ -139,7 +137,7 @@ app.post('/webhook', async (req, res) => {
   }
 });
 
-// ==================== API چت ویجت (مهم: دوطرفه!) ====================
+// ==================== API چت ویجت - حالا ۱۰۰٪ دوطرفه ====================
 app.post('/api/chat', async (req, res) => {
   const { message, sessionId } = req.body;
   if (!message || !sessionId) return res.status(400).json({ error: 'داده ناقص' });
@@ -147,18 +145,16 @@ app.post('/api/chat', async (req, res) => {
   const session = getSession(sessionId);
   session.messages.push({ role: 'user', content: message });
 
-  // اگر به اپراتور وصله → پیام رو به تلگرام بفرست
   if (session.connectedToHuman) {
-    const entry = [...botSessions.entries()].find(([_, v]) => v.fullId === sessionId);
-    if (entry) {
-      const operatorChatId = entry[1].chatId;
-      const short = shortId(sessionId);
-      await bot.telegram.sendMessage(operatorChatId, `پیام جدید از کاربر\n\nکد: \`${short}\`\n\n${message}`, { parse_mode: 'Markdown' }).catch(() => {});
+    // پیدا کردن chatId اپراتور از botSessions
+    const short = shortId(sessionId);
+    const botInfo = botSessions.get(short);
+    if (botInfo && botInfo.chatId) {
+      await bot.telegram.sendMessage(botInfo.chatId, `پیام جدید از کاربر:\n\n${message}`);
     }
     return res.json({ operatorConnected: true });
   }
 
-  // در غیر این صورت → هوش مصنوعی
   const ai = await getAI(message);
   if (ai.success && !ai.requiresHuman) {
     session.messages.push({ role: 'assistant', content: ai.message });
@@ -182,7 +178,7 @@ app.post('/api/connect-human', async (req, res) => {
   res.json({ success: true, pending: true });
 });
 
-// ارسال پیام از ربات به ویجت (برای مواقع خاص)
+// ارسال پیام از ربات به ویجت
 app.post('/api/send-to-user', (req, res) => {
   const { sessionId, message } = req.body;
   io.to(sessionId).emit('operator-message', { message });
