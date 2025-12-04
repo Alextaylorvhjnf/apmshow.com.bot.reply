@@ -97,7 +97,7 @@ bot.on('text', async (ctx) => {
 // وب‌هوک تلگرام
 app.post('/telegram-webhook', (req, res) => bot.handleUpdate(req.body, res));
 
-// درخواست جدید از ویجت — فقط URL صفحه اضافه شد
+// درخواست جدید از ویجت
 app.post('/webhook', async (req, res) => {
   if (req.body.event !== 'new_session') return res.json({ success: false });
 
@@ -128,7 +128,7 @@ app.post('/webhook', async (req, res) => {
   res.json({ success: true });
 });
 
-// وقتی هنوز اپراتور وصل نشده (AI جواب میده) — بدون تغییر
+// هوش مصنوعی با قابلیت پیگیری سفارش و جستجوی محصول (وردپرس + ووکامرس)
 app.post('/api/chat', async (req, res) => {
   const { message, sessionId } = req.body;
   if (!message || !sessionId) return res.status(400).json({ error: 'داده ناقص' });
@@ -141,27 +141,94 @@ app.post('/api/chat', async (req, res) => {
     return res.json({ operatorConnected: true });
   }
 
-  if (GROQ_API_KEY) {
-    try {
-      const aiRes = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
-        model: 'llama-3.3-70b-versatile',
-        messages: [
-          { role: 'system', content: 'فقط فارسی جواب بده. پشتیبان مودب باش.' },
-          { role: 'user', content: message }
-        ],
-        temperature: 0.7,
-        max_tokens: 800
-      }, { headers: { Authorization: `Bearer ${GROQ_API_KEY}` } });
+  // آدرس API وردپرس خودت رو اینجا بذار
+  const SHOP_API_URL = 'https://apmarket2021.ir/ai-shop-api.php'; // فقط این خط رو عوض کن!
 
-      const text = aiRes.data.choices[0].message.content.trim();
-      session.messages.push({ role: 'assistant', content: text });
-      return res.json({ success: true, message: text });
-    } catch (err) {
-      console.error('Groq error:', err.message);
+  const tools = [
+    {
+      type: "function",
+      function: {
+        name: "track_order",
+        description: "پیگیری سفارش با کد پیگیری",
+        parameters: {
+          type: "object",
+          properties: { tracking_code: { type: "string", description: "کد پیگیری سفارش" } },
+          required: ["tracking_code"]
+        }
+      }
+    },
+    {
+      type: "function",
+      function: {
+        name: "search_product",
+        description: "جستجوی محصول و نمایش قیمت و موجودی",
+        parameters: {
+          type: "object",
+          properties: { keyword: { type: "string", description: "نام یا بخشی از نام محصول" } },
+          required: ["keyword"]
+        }
+      }
     }
-  }
+  ];
 
-  res.json({ success: false, requiresHuman: true });
+  try {
+    const response = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
+      model: 'llama-3.3-70b-versatile',
+      messages: [
+        { role: 'system', content: 'شما دستیار فروشگاه هستید. اگر کاربر کد پیگیری داد از track_order و اگر نام محصول پرسید از search_product استفاده کنید. فقط فارسی و مودب جواب بده.' },
+        ...session.messages
+      ],
+      tools,
+      tool_choice: "auto",
+      temperature: 0.6
+    }, { headers: { Authorization: `Bearer ${GROQ_API_KEY}` } });
+
+    const msg = response.data.choices[0].message;
+
+    if (msg.tool_calls) {
+      const call = msg.tool_calls[0];
+      const args = JSON.parse(call.function.arguments);
+
+      let result;
+      if (call.function.name === 'track_order') {
+        result = await axios.post(SHOP_API_URL, { action: 'track_order', tracking_code: args.tracking_code });
+      } else if (call.function.name === 'search_product') {
+        result = await axios.post(SHOP_API_URL, { action: 'search_product', keyword: args.keyword });
+      }
+
+      const data = result.data;
+
+      let reply = '';
+      if (call.function.name === 'track_order') {
+        reply = data.found
+          ? `سفارش شما با کد \`${data.order.tracking_code}\` پیدا شد\n\n` +
+            `وضعیت: ${data.order.status}\n` +
+            `مبلغ: ${Number(data.order.total).toLocaleString()} تومان\n` +
+            `تاریخ: ${data.order.date}\n` +
+            `محصولات:\n${data.order.items.join('\n')}`
+          : `سفارش با کد \`${args.tracking_code}\` پیدا نشد. لطفاً کد را بررسی کنید.`;
+      }
+
+      if (call.function.name === 'search_product') {
+        reply = data.products.length
+          ? 'نتایج جستجو:\n\n' + data.products.map(p =>
+              `• ${p.name}\n   قیمت: ${Number(p.price).toLocaleString()} تومان\n   موجودی: ${p.stock}\n   🔗 ${p.url}`
+            ).join('\n\n')
+          : 'متأسفانه محصولی با این نام پیدا نشد.';
+      }
+
+      session.messages.push({ role: 'assistant', content: reply });
+      return res.json({ success: true, message: reply });
+    }
+
+    const text = msg.content?.trim() || 'در حال حاضر نمی‌تونم کمک کنم';
+    session.messages.push({ role: 'assistant', content: text });
+    return res.json({ success: true, message: text });
+
+  } catch (err) {
+    console.error('AI Error:', err.message);
+    res.json({ success: false, requiresHuman: true });
+  }
 });
 
 // اتصال به اپراتور
@@ -177,15 +244,12 @@ app.post('/api/connect-human', async (req, res) => {
   res.json({ success: true, pending: true });
 });
 
-// سوکت — فقط URL در پیام کاربر اضافه شد
+// سوکت
 io.on('connection', (socket) => {
-  socket.on('join-session', (sessionId) => {
-    socket.join(sessionId);
-  });
+  socket.on('join-session', (sessionId) => socket.join(sessionId));
 
   socket.on('user-message', async ({ sessionId, message }) => {
     if (!sessionId || !message) return;
-
     const short = shortId(sessionId);
     const info = botSessions.get(short);
 
@@ -209,7 +273,7 @@ ${message}
 
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
-// ==================== راه‌اندازی ====================
+// راه‌اندازی
 server.listen(PORT, '0.0.0.0', async () => {
   console.log(`سرور روی پورت ${PORT} فعال شد`);
 
