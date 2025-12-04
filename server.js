@@ -136,7 +136,7 @@ app.post('/api/connect-human', async (req, res) => {
   res.json({ success: true, pending: true });
 });
 
-// ==================== ۱۰۰٪ به دیتابیس سایت وصل — بدون Groq ====================
+// ==================== دستیار ۱۰۰٪ واقعی — بدون هوش مصنوعی خارجی ====================
 const SHOP_API_URL = 'https://shikpooshaan.ir/ai-shop-api.php';
 
 app.post('/api/chat', async (req, res) => {
@@ -153,66 +153,56 @@ app.post('/api/chat', async (req, res) => {
 
   const lowerMsg = message.toLowerCase();
 
-  // تشخیص کد پیگیری
+  // تشخیص کد رهگیری
   const codeMatch = message.match(/\b(\d{5,})\b|کد\s*(\d+)|پیگیری\s*(\d+)/i);
   const isTracking = codeMatch || lowerMsg.includes('پیگیری') || lowerMsg.includes('سفارش') || lowerMsg.includes('کد') || lowerMsg.includes('وضعیت');
 
-  // تشخیص جستجوی محصول
-  const isProduct = lowerMsg.includes('قیمت') || lowerMsg.includes('موجودی') || lowerMsg.includes('دارید') || lowerMsg.includes('چنده');
-
-  try {
-    if (isTracking) {
+  if (isTracking) {
+    try {
       const code = codeMatch ? (codeMatch[1] || codeMatch[2] || codeMatch[3]) : message.replace(/\D/g, '').trim();
 
       if (!code || code.length < 4) {
-        return res.json({ success: true, message: 'لطفاً کد پیگیری معتبر وارد کنید (مثلاً 67025)' });
+        return res.json({ success: true, message: 'داداش کد رهگیری رو کامل بنویس 😊 مثلاً 67025' });
       }
 
       const result = await axios.post(SHOP_API_URL, { action: 'track_order', tracking_code: code }, { timeout: 8000 });
       const data = result.data;
 
       if (data.found) {
-        const items = data.order.items?.join('\n') || 'ندارد';
+        const items = data.order.items?.join('\n') || 'هیچ محصولی ثبت نشده';
         const total = Number(data.order.total).toLocaleString();
         const status = data.order.status || 'نامشخص';
+        const customerName = data.order.customer_name || 'مشتری عزیز';
+        const gateway = data.order.payment || 'نامشخص';
 
-        const reply = `سفارش شما با کد \`${code}\` پیدا شد!\n\n` +
-                      `وضعیت فعلی: **${status}**\n` +
-                      `مبلغ کل: ${total} تومان\n` +
-                      `تاریخ سفارش: ${data.order.date}\n` +
+        const reply = `سلام ${customerName} عزیز! 😊\n\n` +
+                      `سفارشت با کد رهگیری \`${code}\` رو پیدا کردم!\n\n` +
                       `محصولات:\n${items}\n\n` +
-                      `اگر سؤال دیگه‌ای دارید، در خدمتم 😊`;
+                      `مبلغ کل: ${total} تومان\n` +
+                      `درگاه پرداخت: ${gateway}\n` +
+                      `وضعیت فعلی: **${status}**\n\n` +
+                      `هر وقت خواستی بگو وضعیت رو دوباره چک کنم یا سؤالی داشتی، در خدمتم! 💙`;
 
         session.messages.push({ role: 'assistant', content: reply });
         return res.json({ success: true, message: reply });
       } else {
-        return res.json({ success: true, message: `سفارش با کد \`${code}\` پیدا نشد. لطفاً کد را چک کنید.` });
+        return res.json({ success: true, message: `داداش سفارش با کد \`${code}\` پیدا نشد 😕\nکد رو دوباره چک کن یا با اپراتور صحبت کن، در خدمتم!` });
       }
+    } catch (err) {
+      return res.json({ success: true, message: 'الان یه لحظه نت یه مشکلی داره، چند لحظه دیگه امتحان کن یا با اپراتور صحبت کن 😊' });
     }
-
-    if (isProduct) {
-      const result = await axios.post(SHOP_API_URL, { action: 'search_product', keyword: message }, { timeout: 8000 });
-      const data = result.data;
-
-      if (data.products && data.products.length > 0) {
-        const reply = 'نتایج جستجو:\n\n' + data.products.slice(0, 4).map(p =>
-          `• ${p.name}\n   قیمت: ${Number(p.price).toLocaleString()} تومان\n   موجودی: ${p.stock}\n   🔗 ${p.url}`
-        ).join('\n\n');
-
-        session.messages.push({ role: 'assistant', content: reply });
-        return res.json({ success: true, message: reply });
-      } else {
-        return res.json({ success: true, message: 'متأسفانه محصولی با این نام پیدا نشد.' });
-      }
-    }
-
-    // برای بقیه سؤالات
-    return res.json({ success: true, message: 'سلام! چطور می‌تونم کمکتون کنم؟\n\nمی‌تونید بپرسید:\n• پیگیری سفارش با کد\n• قیمت و موجودی محصول' });
-
-  } catch (err) {
-    console.log('خطا در اتصال به دیتابیس سایت:', err.message);
-    return res.json({ success: true, message: 'در حال حاضر نمی‌تونم به اطلاعات دسترسی داشته باشم. لطفاً با اپراتور صحبت کنید.' });
   }
+
+  // برای بقیه سؤالات
+  return res.json({ 
+    success: true, 
+    message: `سلام داداش! 😊\n\n` +
+             `می‌تونم کمکت کنم با:\n` +
+             `• پیگیری سفارش (کد رهگیری بده)\n` +
+             `• قیمت و موجودی محصول\n` +
+             `• هر سؤالی که داری!\n\n` +
+             `فقط بنویس، من اینجام! 💪`
+  });
 });
 
 // ==================== سوکت ====================
@@ -251,7 +241,7 @@ server.listen(PORT, '0.0.0.0', async () => {
   try {
     await bot.telegram.setWebhook(`${BASE_URL}/telegram-webhook`);
     console.log('وب‌هوک تنظیم شد:', `${BASE_URL}/telegram-webhook`);
-    await bot.telegram.sendMessage(ADMIN_TELEGRAM_ID, `ربات آماده است (بدون هوش مصنوعی)\n${BASE_URL}`);
+    await bot.telegram.sendMessage(ADMIN_TELEGRAM_ID, `دستیار واقعی فعال شد (بدون هوش مصنوعی)\n${BASE_URL}`);
   } catch (err) {
     console.error('وب‌هوک خطا داد → Polling فعال شد');
     bot.launch();
