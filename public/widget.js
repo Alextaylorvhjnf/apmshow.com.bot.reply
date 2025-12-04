@@ -2,88 +2,158 @@ class ChatWidget {
     constructor(options = {}) {
         this.options = {
             backendUrl: options.backendUrl || window.location.origin,
+            position: options.position || 'bottom-left',
+            theme: options.theme || 'default',
             ...options
         };
-
+      
         this.state = {
             isOpen: false,
+            isConnected: false,
+            operatorConnected: false,
             sessionId: null,
             socket: null,
-            operatorConnected: false,  // مهم: وقتی این true شد هوش مصنوعی قطع میشه
-            isConnecting: false
+            messages: [],
+            isTyping: false
         };
-
+      
         this.init();
     }
-
+  
     init() {
+        // Generate session ID
         this.state.sessionId = this.generateSessionId();
+      
+        // Inject CSS and HTML
         this.injectStyles();
         this.injectHTML();
+      
+        // Initialize event listeners
         this.initEvents();
+      
+        // Connect to WebSocket
         this.connectWebSocket();
-        console.log('ویجت چت آماده شد - session:', this.state.sessionId);
+      
+        console.log('Chat Widget initialized with session:', this.state.sessionId);
     }
-
+  
     generateSessionId() {
-        let id = localStorage.getItem('chat_session_id');
-        if (!id) {
-            id = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-            localStorage.setItem('chat_session_id', id);
+        let sessionId = localStorage.getItem('chat_session_id');
+        if (!sessionId) {
+            sessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            localStorage.setItem('chat_session_id', sessionId);
         }
-        return id;
+        return sessionId;
     }
-
+  
     injectStyles() {
+        // CSS is already loaded via widget.css
+        // Just ensure it's loaded
         if (!document.querySelector('link[href*="widget.css"]')) {
             const link = document.createElement('link');
             link.rel = 'stylesheet';
             link.href = `${this.options.backendUrl}/widget.css`;
+            link.crossOrigin = 'anonymous';
             document.head.appendChild(link);
         }
     }
-
+  
     injectHTML() {
+        // Create container
         this.container = document.createElement('div');
         this.container.className = 'chat-widget';
         this.container.innerHTML = `
-            <button class="chat-toggle-btn"><i class="fas fa-comment-dots"></i><span class="notification-badge">0</span></button>
+            <!-- Toggle Button -->
+            <button class="chat-toggle-btn">
+                <i class="fas fa-comment-dots"></i>
+                <span class="notification-badge" style="display: none">0</span>
+            </button>
+          
+            <!-- Chat Window -->
             <div class="chat-window">
+                <!-- Header -->
                 <div class="chat-header">
                     <div class="header-left">
-                        <div class="chat-logo"><i class="fas fa-robot"></i></div>
-                        <div class="chat-title"><h3>پشتیبان هوشمند</h3><p>آنلاین</p></div>
+                        <div class="chat-logo">
+                            <i class="fas fa-robot"></i>
+                        </div>
+                        <div class="chat-title">
+                            <h3>پشتیبان هوشمند</h3>
+                            <p>پاسخگوی سوالات شما</p>
+                        </div>
                     </div>
-                    <button class="close-btn"><i class="fas fa-times"></i></button>
+                    <div class="header-right">
+                        <div class="chat-status">
+                            <span class="status-dot"></span>
+                            <span>آنلاین</span>
+                        </div>
+                        <button class="close-btn">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
                 </div>
+              
+                <!-- Messages -->
                 <div class="chat-messages">
+                    <!-- Messages will be added here dynamically -->
                     <div class="message system">
-                        <div class="message-text">سلام! چطور می‌تونم کمکتون کنم؟</div>
+                        <div class="message-text">
+                            سلام! 👋 من دستیار هوشمند شما هستم. چطور می‌تونم کمکتون کنم؟
+                        </div>
                         <div class="message-time">همین الان</div>
                     </div>
                 </div>
-                <div class="operator-info" style="display:none;">
+              
+                <!-- Connection Status -->
+                <div class="connection-status">
+                    <div class="status-message">
+                        <i class="fas fa-wifi"></i>
+                        <span>در حال اتصال...</span>
+                    </div>
+                </div>
+              
+                <!-- Typing Indicator -->
+                <div class="typing-indicator">
+                    <div class="typing-dots">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                    </div>
+                    <span>در حال تایپ...</span>
+                </div>
+              
+                <!-- Operator Info -->
+                <div class="operator-info">
                     <div class="operator-card">
-                        <div class="operator-avatar"><i class="fas fa-user-tie"></i></div>
+                        <div class="operator-avatar">
+                            <i class="fas fa-user-tie"></i>
+                        </div>
                         <div class="operator-details">
-                            <h4>اپراتور انسانی متصل شد</h4>
-                            <p>حالا مستقیم با پشتیبان در ارتباط هستید</p>
+                            <h4><i class="fas fa-shield-alt"></i> اپراتور انسانی</h4>
+                            <p>در حال حاضر با پشتیبان انسانی در ارتباط هستید</p>
                         </div>
                     </div>
                 </div>
+              
+                <!-- Input Area -->
                 <div class="chat-input-area">
                     <div class="input-wrapper">
                         <textarea class="message-input" placeholder="پیام خود را بنویسید..." rows="1"></textarea>
-                        <button class="send-btn"><i class="fas fa-paper-plane"></i></button>
+                        <button class="send-btn">
+                            <i class="fas fa-paper-plane"></i>
+                        </button>
                     </div>
                     <button class="human-support-btn">
-                        <i class="fas fa-user-headset"></i> اتصال به اپراتور انسانی
+                        <i class="fas fa-user-headset"></i>
+                        اتصال به اپراتور انسانی
                     </button>
                 </div>
             </div>
         `;
+      
         document.body.appendChild(this.container);
-
+      
+        // Cache DOM elements
         this.elements = {
             toggleBtn: this.container.querySelector('.chat-toggle-btn'),
             chatWindow: this.container.querySelector('.chat-window'),
@@ -92,159 +162,368 @@ class ChatWidget {
             messageInput: this.container.querySelector('.message-input'),
             sendBtn: this.container.querySelector('.send-btn'),
             humanSupportBtn: this.container.querySelector('.human-support-btn'),
+            typingIndicator: this.container.querySelector('.typing-indicator'),
+            connectionStatus: this.container.querySelector('.connection-status'),
             operatorInfo: this.container.querySelector('.operator-info'),
-            notificationBadge: this.container.querySelector('.notification-badge')
+            notificationBadge: this.container.querySelector('.notification-badge'),
+            chatStatus: this.container.querySelector('.chat-status')
         };
     }
-
+  
     initEvents() {
-        this.elements.toggleBtn.onclick = () => this.toggleChat();
-        this.elements.closeBtn.onclick = () => this.closeChat();
-        this.elements.sendBtn.onclick = () => this.sendMessage();
-        this.elements.messageInput.onkeydown = (e) => {
+        // Toggle chat
+        this.elements.toggleBtn.addEventListener('click', () => this.toggleChat());
+        this.elements.closeBtn.addEventListener('click', () => this.closeChat());
+      
+        // Send message
+        this.elements.sendBtn.addEventListener('click', () => this.sendMessage());
+        this.elements.messageInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 this.sendMessage();
             }
-        };
-        this.elements.messageInput.oninput = () => this.resizeTextarea();
-        this.elements.humanSupportBtn.onclick = () => this.connectToHuman();
+        });
+      
+        // Auto-resize textarea
+        this.elements.messageInput.addEventListener('input', () => {
+            this.resizeTextarea();
+        });
+      
+        // Human support
+        this.elements.humanSupportBtn.addEventListener('click', () => this.connectToHuman());
+      
+        // Close chat when clicking outside
+        document.addEventListener('click', (e) => {
+            if (this.state.isOpen &&
+                !this.elements.chatWindow.contains(e.target) &&
+                !this.elements.toggleBtn.contains(e.target)) {
+                this.closeChat();
+            }
+        });
     }
-
+  
     connectWebSocket() {
-        const wsUrl = this.options.backendUrl.replace('http', 'ws');
-        this.state.socket = io(wsUrl, { transports: ['websocket'] });
-
-        this.state.socket.on('connect', () => {
-            this.state.socket.emit('join-session', this.state.sessionId);
-        });
-
-        this.state.socket.on('operator-connected', () => {
-            this.state.operatorConnected = true;
-            this.elements.operatorInfo.style.display = 'block';
-            this.elements.humanSupportBtn.style.display = 'none';  // دکمه ناپدید میشه
-            this.addMessage('system', 'اپراتور انسانی متصل شد! حالا مستقیم با پشتیبان صحبت می‌کنید.');
-        });
-
-        this.state.socket.on('operator-message', (data) => {
-            this.addMessage('operator', data.message || data);
-        });
+        try {
+            const wsUrl = this.options.backendUrl.replace('http', 'ws');
+            this.state.socket = io(wsUrl, {
+                transports: ['websocket', 'polling'],
+                reconnection: true,
+                reconnectionAttempts: 5
+            });
+          
+            this.state.socket.on('connect', () => {
+                console.log('WebSocket connected');
+                this.state.isConnected = true;
+                this.updateConnectionStatus(true);
+              
+                // Join session
+                this.state.socket.emit('join-session', this.state.sessionId);
+            });
+            // در تابع initWebSocket یا constructor:
+this.state.socket.on('operator-accepted', (data) => {
+  this.addMessage('system', data.message);
+  this.state.operatorConnected = true;
+  this.elements.operatorInfo.classList.add('active');
+});
+this.state.socket.on('operator-rejected', (data) => {
+  this.addMessage('system', data.message);
+  this.state.operatorConnected = false;
+  this.elements.operatorInfo.classList.remove('active');
+  this.resetHumanSupportButton();
+});
+            this.state.socket.on('operator-connected', (data) => {
+                this.handleOperatorConnected(data);
+            });
+          
+            this.state.socket.on('operator-message', (data) => {
+                this.addMessage('operator', data.message);
+            });
+          
+            this.state.socket.on('connect_error', () => {
+                this.updateConnectionStatus(false);
+            });
+          
+        } catch (error) {
+            console.error('WebSocket connection failed:', error);
+        }
     }
-
+  
+    updateConnectionStatus(connected) {
+        if (connected) {
+            this.elements.connectionStatus.classList.remove('active');
+            this.elements.chatStatus.innerHTML = `
+                <span class="status-dot"></span>
+                <span>آنلاین</span>
+            `;
+        } else {
+            this.elements.connectionStatus.classList.add('active');
+        }
+    }
+  
     toggleChat() {
         this.state.isOpen = !this.state.isOpen;
-        this.elements.chatWindow.classList.toggle('active', this.state.isOpen);
-        if (this.state.isOpen) this.elements.messageInput.focus();
+        this.elements.chatWindow.classList.toggle('active');
+      
+        if (this.state.isOpen) {
+            this.elements.messageInput.focus();
+            this.resetNotification();
+        }
     }
-
+  
     closeChat() {
         this.state.isOpen = false;
         this.elements.chatWindow.classList.remove('active');
     }
-
+  
     resizeTextarea() {
-        const ta = this.elements.messageInput;
-        ta.style.height = 'auto';
-        ta.style.height = Math.min(ta.scrollHeight, 120) + 'px';
+        const textarea = this.elements.messageInput;
+        textarea.style.height = 'auto';
+        textarea.style.height = Math.min(textarea.scrollHeight, 100) + 'px';
     }
-
-    // تابع اصلی ارسال پیام
+  
     async sendMessage() {
         const message = this.elements.messageInput.value.trim();
-        if (!message) return;
-
+      
+        if (!message || this.state.isTyping) return;
+      
+        // Add user message
         this.addMessage('user', message);
+      
+        // Clear input
         this.elements.messageInput.value = '';
         this.resizeTextarea();
-
-        // اگر به اپراتور وصل باشه → فقط به سرور بفرست (هوش مصنوعی دیگه جواب نمیده)
-        if (this.state.operatorConnected) {
-            await fetch(`${this.options.backendUrl}/api/chat`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message, sessionId: this.state.sessionId })
-            });
-            return;
-        }
-
-        // در غیر اینصورت → هوش مصنوعی
+      
+        // Disable input
+        this.setTyping(true);
+      
         try {
-            const res = await fetch(`${this.options.backendUrl}/api/chat`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message, sessionId: this.state.sessionId })
-            });
-            const data = await res.json();
-
-            if (data.success) {
-                this.addMessage('assistant', data.message);
+            if (this.state.operatorConnected) {
+                // Send to operator via WebSocket
+                this.state.socket.emit('send-to-operator', {
+                    sessionId: this.state.sessionId,
+                    message: message
+                });
+            } else {
+                // Send to AI
+                await this.sendToAI(message);
             }
-            if (data.requiresHuman) {
-                this.elements.humanSupportBtn.textContent = 'اتصال به اپراتور (توصیه شده)';
-                this.elements.humanSupportBtn.style.background = '#ff9500';
-            }
-        } catch {
-            this.addMessage('system', 'خطا در ارتباط');
+        } catch (error) {
+            console.error('Send message error:', error);
+            this.addMessage('system', 'خطا در ارسال پیام. لطفاً دوباره تلاش کنید.');
+        } finally {
+            this.setTyping(false);
         }
     }
-
-    async connectToHuman() {
-        if (this.state.operatorConnected || this.state.isConnecting) return;
-        this.state.isConnecting = true;
-        this.elements.humanSupportBtn.disabled = true;
-        this.elements.humanSupportBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> در حال اتصال...';
-
+  
+    async sendToAI(message) {
         try {
-            await fetch(`${this.options.backendUrl}/api/connect-human`, {
+            const response = await fetch(`${this.options.backendUrl}/api/chat`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                },
                 body: JSON.stringify({
-                    sessionId: this.state.sessionId,
-                    userInfo: { name: 'کاربر سایت', page: location.href }
+                    message: message,
+                    sessionId: this.state.sessionId
                 })
             });
-            this.addMessage('system', 'درخواست شما ارسال شد. منتظر پذیرش اپراتور باشید...');
-        } catch {
-            this.addMessage('system', 'خطا در ارسال درخواست');
-            this.elements.humanSupportBtn.innerHTML = '<i class="fas fa-user-headset"></i> اتصال به اپراتور انسانی';
-            this.elements.humanSupportBtn.disabled = false;
-        } finally {
-            this.state.isConnecting = false;
+          
+            const data = await response.json();
+          
+            if (data.success) {
+                this.addMessage('assistant', data.message);
+              
+                // If AI suggests human support
+                if (data.requiresHuman) {
+                    this.elements.humanSupportBtn.innerHTML = `
+                        <i class="fas fa-user-headset"></i>
+                        اتصال به اپراتور انسانی (پیشنهاد سیستم)
+                    `;
+                    this.elements.humanSupportBtn.style.background = '#ff9500';
+                }
+            } else {
+                this.addMessage('system', data.message);
+            }
+          
+        } catch (error) {
+            console.error('AI request error:', error);
+            this.addMessage('system', 'خطا در ارتباط با سرور. لطفاً دوباره تلاش کنید.');
         }
     }
-
+  
+    async connectToHuman() {
+    if (this.state.operatorConnected || this.state.isConnecting) return;
+  
+    this.state.isConnecting = true;
+    this.elements.humanSupportBtn.disabled = true;
+    this.elements.humanSupportBtn.innerHTML = `
+        <i class="fas fa-spinner fa-spin"></i>
+        در حال اتصال...
+    `;
+  
+    try {
+        const userInfo = {
+            name: 'کاربر سایت',
+            page: window.location.href,
+            userAgent: navigator.userAgent,
+            referrer: document.referrer
+        };
+      
+        console.log('👤 Requesting human connection...');
+      
+        const response = await fetch(`${this.options.backendUrl}/api/connect-human`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                sessionId: this.state.sessionId,
+                userInfo: userInfo
+            })
+        });
+      
+        const data = await response.json();
+      
+        if (data.success) {
+            this.state.operatorConnected = true;
+            this.elements.operatorInfo.classList.add('active');
+            this.addMessage('system', data.message);
+          
+            // Update button
+            this.elements.humanSupportBtn.innerHTML = `
+                <i class="fas fa-user-check"></i>
+                متصل به اپراتور
+            `;
+            this.elements.humanSupportBtn.style.background = 'linear-gradient(145deg, #2ecc71, #27ae60)';
+            this.elements.humanSupportBtn.disabled = true;
+          
+            console.log('✅ Connected to human operator');
+        } else {
+            this.addMessage('system', `❌ ${data.error || 'خطا در اتصال به اپراتور'}`);
+            if (data.details) {
+                console.error('Connection error details:', data.details);
+            }
+            this.resetHumanSupportButton();
+        }
+      
+    } catch (error) {
+        console.error('❌ Connect to human error:', error);
+        this.addMessage('system', '❌ خطا در ارتباط با سرور');
+        this.resetHumanSupportButton();
+    } finally {
+        this.state.isConnecting = false;
+        this.elements.humanSupportBtn.disabled = false;
+    }
+}
+  
+    resetHumanSupportButton() {
+        this.elements.humanSupportBtn.innerHTML = `
+            <i class="fas fa-user-headset"></i>
+            اتصال به اپراتور انسانی
+        `;
+        this.elements.humanSupportBtn.style.background = '#ff6b6b';
+    }
+  
+    handleOperatorConnected(data) {
+        this.state.operatorConnected = true;
+        this.elements.operatorInfo.classList.add('active');
+        this.addMessage('operator', data.message);
+        this.resetHumanSupportButton();
+    }
+  
     addMessage(type, text) {
-        const el = document.createElement('div');
-        el.className = `message ${type}`;
-        const time = new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
-        const icons = { user: 'fa-user', assistant: 'fa-robot', operator: 'fa-user-tie', system: 'fa-info-circle' };
-        const names = { user: 'شما', assistant: 'هوش مصنوعی', operator: 'اپراتور', system: 'سیستم' };
-
-        el.innerHTML = `
-            <div class="message-sender"><i class="fas ${icons[type]}"></i> <span>${names[type]}</span></div>
+        const messageEl = document.createElement('div');
+        messageEl.className = `message ${type}`;
+      
+        const time = new Date().toLocaleTimeString('fa-IR', {
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+      
+        let senderIcon = '';
+        let senderText = '';
+      
+        switch(type) {
+            case 'user':
+                senderIcon = '<i class="fas fa-user"></i>';
+                senderText = 'شما';
+                break;
+            case 'assistant':
+                senderIcon = '<i class="fas fa-robot"></i>';
+                senderText = 'پشتیبان هوشمند';
+                break;
+            case 'operator':
+                senderIcon = '<i class="fas fa-user-tie"></i>';
+                senderText = 'اپراتور انسانی';
+                break;
+        }
+      
+        messageEl.innerHTML = `
+            ${senderIcon ? `
+            <div class="message-sender">
+                ${senderIcon}
+                <span>${senderText}</span>
+            </div>
+            ` : ''}
             <div class="message-text">${this.escapeHtml(text)}</div>
             <div class="message-time">${time}</div>
         `;
-
-        this.elements.messagesContainer.appendChild(el);
+      
+        this.elements.messagesContainer.appendChild(messageEl);
         this.elements.messagesContainer.scrollTop = this.elements.messagesContainer.scrollHeight;
-
+      
+        // Add to state
+        this.state.messages.push({ type, text, time });
+      
+        // Show notification if chat is closed
         if (!this.state.isOpen) {
-            this.elements.notificationBadge.textContent = (parseInt(this.elements.notificationBadge.textContent) || 0) + 1;
-            this.elements.notificationBadge.style.display = 'block';
+            this.showNotification();
         }
     }
-
+  
+    setTyping(typing) {
+        this.state.isTyping = typing;
+      
+        if (typing) {
+            this.elements.typingIndicator.classList.add('active');
+            this.elements.sendBtn.disabled = true;
+            this.elements.messageInput.disabled = true;
+        } else {
+            this.elements.typingIndicator.classList.remove('active');
+            this.elements.sendBtn.disabled = false;
+            this.elements.messageInput.disabled = false;
+            this.elements.messageInput.focus();
+        }
+    }
+  
+    showNotification() {
+        const badge = this.elements.notificationBadge;
+        const count = parseInt(badge.textContent) || 0;
+        badge.textContent = count + 1;
+        badge.style.display = 'flex';
+    }
+  
+    resetNotification() {
+        const badge = this.elements.notificationBadge;
+        badge.textContent = '0';
+        badge.style.display = 'none';
+    }
+  
     escapeHtml(text) {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
     }
 }
-
-// راه‌اندازی خودکار
+// Initialize when DOM is ready
 if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => window.ChatWidget = new ChatWidget());
+    document.addEventListener('DOMContentLoaded', () => {
+        window.ChatWidget = new ChatWidget();
+    });
 } else {
     window.ChatWidget = new ChatWidget();
 }
+// Global initialization function
+window.initChatWidget = function(options) {
+    return new ChatWidget(options);
+};
