@@ -93,7 +93,7 @@ bot.on('text', async (ctx) => {
 
 app.post('/telegram-webhook', (req, res) => bot.handleUpdate(req.body, res));
 
-// ==================== وب‌هوک ویجت ====================
+// وب‌هوک ویجت
 app.post('/webhook', async (req, res) => {
   if (req.body.event !== 'new_session') return res.json({ success: false });
 
@@ -124,7 +124,20 @@ app.post('/webhook', async (req, res) => {
   res.json({ success: true });
 });
 
-// ==================== هوش مصنوعی — ۱۰۰٪ جواب میده ====================
+// اتصال به اپراتور
+app.post('/api/connect-human', async (req, res) => {
+  const { sessionId, userInfo } = req.body;
+  getSession(sessionId).userInfo = userInfo || {};
+
+  await axios.post(`${BASE_URL}/webhook`, {
+    event: 'new_session',
+    data: { sessionId, userInfo, userMessage: 'درخواست اتصال' }
+  }).catch(() => {});
+
+  res.json({ success: true, pending: true });
+});
+
+// ==================== هوش مصنوعی — فوری پیگیری با اتصال به دیتابیس سایت ====================
 app.post('/api/chat', async (req, res) => {
   const { message, sessionId } = req.body;
   if (!message || !sessionId) return res.status(400).json({ error: 'داده ناقص' });
@@ -137,64 +150,80 @@ app.post('/api/chat', async (req, res) => {
     return res.json({ operatorConnected: true });
   }
 
-  // آدرس API وردپرس خودت رو اینجا بذار
-  const SHOP_API_URL = 'https://shikpooshaan.ir/ai-shop-api.php'; // فقط این خط رو عوض کن!
+  // اتصال مستقیم به دیتابیس سایت shikpooshaan.ir
+  const SHOP_API_URL = 'https://shikpooshaan.ir/ai-shop-api.php'; // آدرس سایتت — بدون تغییر!
 
-  // تشخیص خودکار پیگیری یا جستجوی محصول
-  const isTracking = /\b(پیگیری|سفارش|کد|ترک|track|trk|123|456|789)\b/i.test(message) || /^\d+$/.test(message.trim());
-  const isProduct = /\b(قیمت|موجودی|دارید|چنده|خرید|بخرم|آیفون|مک|سامسونگ|لپتاپ)\b/i.test(message);
+  // تشخیص فوری کد پیگیری (دقیق و سریع)
+  const trackingMatch = message.match(/(\d{6,}|TRK\d+|ORD\d+)/i) || message.match(/کد\s+(\d+)/i);
+  const isTracking = trackingMatch || /\b(پیگیری|سفارش|کد|ترک|track)\b/i.test(message);
+  const isProduct = /\b(قیمت|موجودی|دارید|چنده|خرید|آیفون|سامسونگ|لپتاپ)\b/i.test(message);
 
-  if (isTracking || isProduct) {
+  if (isTracking) {
     try {
-      let result;
-      if (isTracking) {
-        const code = message.match(/\d{4,}/)?.[0] || message.trim();
-        result = await axios.post(SHOP_API_URL, { action: 'track_order', tracking_code: code }, { timeout: 8000 });
-      } else {
-        result = await axios.post(SHOP_API_URL, { action: 'search_product', keyword: message }, { timeout: 8000 });
-      }
+      const code = trackingMatch ? trackingMatch[1] : message.trim();
+      const result = await axios.post(SHOP_API_URL, { 
+        action: 'track_order', 
+        tracking_code: code 
+      }, { timeout: 5000 }); // فوری — ۵ ثانیه تایم‌اوت
 
       const data = result.data;
+
       let reply = '';
-
-      if (isTracking && data.found) {
-        reply = `سفارش شما با کد \`${data.order.tracking_code}\` پیدا شد\n\n` +
-          `وضعیت: ${data.order.status}\n` +
-          `مبلغ: ${Number(data.order.total).toLocaleString()} تومان\n` +
-          `تاریخ: ${data.order.date}\n` +
-          `محصولات:\n${data.order.items.join('\n')}`;
-      } else if (isTracking) {
-        reply = 'سفارش با این کد پیدا نشد. لطفاً کد را دقیق وارد کنید.';
-      }
-
-      if (isProduct && data.products?.length) {
-        reply = 'نتایج جستجو:\n\n' + data.products.slice(0, 4).map(p =>
-          `• ${p.name}\n   قیمت: ${Number(p.price).toLocaleString()} تومان\n   موجودی: ${p.stock}\n   🔗 ${p.url}`
-        ).join('\n\n');
-      } else if (isProduct) {
-        reply = 'متأسفانه محصولی با این نام پیدا نشد.';
+      if (data.found) {
+        reply = `سفارش شما با کد \`${data.order.tracking_code}\` پیدا شد!\n\n` +
+          `در مرحله: **${data.order.status_stage || data.order.status}**\n` +  // دقیق "در فلان مرحله"
+          `مبلغ کل: ${Number(data.order.total).toLocaleString()} تومان\n` +
+          `تاریخ سفارش: ${data.order.date}\n` +
+          `محصولات:\n${data.order.items.join('\n')}\n\n` +
+          `اگر سؤال دیگه‌ای داری، بگو! 😊`;
+      } else {
+        reply = `سفارش با کد \`${code}\` پیدا نشد. لطفاً کد پیگیری رو دقیق وارد کن (مثل 123456 یا TRK123).\n\nمی‌تونی با اپراتور انسانی چت کنی؟`;
       }
 
       session.messages.push({ role: 'assistant', content: reply });
       return res.json({ success: true, message: reply });
 
     } catch (err) {
-      console.log('API وردپرس در دسترس نیست، از هوش مصنوعی عادی استفاده می‌کنم');
+      console.log('خطا در اتصال به دیتابیس سایت:', err.message);
+      // اگر سایت قطع بود، هوش مصنوعی عادی جواب بده
     }
   }
 
-  // اگر API کار نکرد، هوش مصنوعی عادی جواب بده
+  // جستجوی محصول (اگر قیمت یا موجودی پرسید)
+  if (isProduct) {
+    try {
+      const result = await axios.post(SHOP_API_URL, { 
+        action: 'search_product', 
+        keyword: message 
+      }, { timeout: 5000 });
+
+      const data = result.data;
+      let reply = data.products.length
+        ? `نتایج جستجو در فروشگاه:\n\n` + data.products.slice(0, 3).map(p =>
+            `• ${p.name}\n   قیمت: ${Number(p.price).toLocaleString()} تومان\n   موجودی: ${p.stock}\n   🔗 ${p.url}`
+          ).join('\n\n')
+        : 'متأسفانه محصولی با این نام پیدا نشد. جزئیات بیشتری بگو!';
+
+      session.messages.push({ role: 'assistant', content: reply });
+      return res.json({ success: true, message: reply });
+
+    } catch (err) {
+      console.log('خطا در جستجوی محصول:', err.message);
+    }
+  }
+
+  // هوش مصنوعی عادی برای سؤال‌های دیگه (همیشه جواب میده)
   if (GROQ_API_KEY) {
     try {
       const aiRes = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
         model: 'llama-3.3-70b-versatile',
         messages: [
-          { role: 'system', content: 'شما دستیار فروشگاه هستید. فقط فارسی و مودب جواب بده.' },
-          ...session.messages.slice(-10)
+          { role: 'system', content: 'شما دستیار فروشگاه shikpooshaan.ir هستید. فقط فارسی و مودب جواب بده. اگر کد پیگیری داد، فوری پیگیری کن.' },
+          ...session.messages.slice(-8) // فقط ۸ پیام آخر
         ],
         temperature: 0.7,
-        max_tokens: 600
-      }, { headers: { Authorization: `Bearer ${GROQ_API_KEY}` }, timeout: 15000 });
+        max_tokens: 500
+      }, { headers: { Authorization: `Bearer ${GROQ_API_KEY}` }, timeout: 10000 });
 
       const text = aiRes.data.choices[0].message.content.trim();
       session.messages.push({ role: 'assistant', content: text });
@@ -204,20 +233,8 @@ app.post('/api/chat', async (req, res) => {
     }
   }
 
+  // اگر هیچی کار نکرد
   res.json({ success: false, requiresHuman: true });
-});
-
-// اتصال به اپراتور
-app.post('/api/connect-human', async (req, res) => {
-  const { sessionId, userInfo } = req.body;
-  getSession(sessionId).userInfo = userInfo || {};
-
-  await axios.post(`${BASE_URL}/webhook`, {
-    event: 'new_session',
-    data: { sessionId, userInfo, userMessage: 'درخواست اتصال' }
-  }).catch(() => {});
-
-  res.json({ success: true, pending: true });
 });
 
 // سوکت
