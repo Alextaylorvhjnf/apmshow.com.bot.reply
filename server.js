@@ -151,7 +151,7 @@ app.post('/api/chat', async (req, res) => {
   }
 
   // اتصال مستقیم به دیتابیس سایت shikpooshaan.ir
-  const SHOP_API_URL = 'https://shikpooshaan.ir/ai-shop-api.php'; // آدرس سایتت — بدون تغییر!
+  const SHOP_API_URL = 'https://shikpooan.ir/ai-shop-api.php'; // آدرس سایتت — بدون تغییر!
 
   // تشخیص فوری کد پیگیری (دقیق و سریع)
   const trackingMatch = message.match(/(\d{6,}|TRK\d+|ORD\d+)/i) || message.match(/کد\s+(\d+)/i);
