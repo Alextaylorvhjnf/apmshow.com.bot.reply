@@ -142,15 +142,31 @@ app.post('/api/chat', async (req, res) => {
       const result = await axios.post(SHOP_API_URL, { action: 'track_order', tracking_code: code }, { timeout: 8000 });
       const data = result.data;
       if (data.found) {
-        const items = data.order.items?.map(i => `• ${i}`).join('\n') || 'ندارد';
-        const total = data.order.total || 'نامشخص';
-        const status = data.order.status || 'نامشخص';
-        const trackingCode = data.order.tracking_code || code; // اصلاح: از کد واقعی سفارش استفاده کن
-        const reply = `سفارش شما با کد رهگیری \`${trackingCode}\` پیدا شد!\n\n` +
-                      `وضعیت فعلی: **${status}**\n` +
-                      `مبلغ کل: ${total}\n` +
-                      `تاریخ سفارش: ${data.order.date}\n` +
-                      `محصولات:\n${items}\n\n` +
+        const o = data.order;
+        const items = o.items?.map(i => `• ${i}`).join('\n') || 'ندارد';
+        const total = o.total || 'نامشخص';
+        const status = o.status || 'نامشخص';
+        const trackingCode = o.tracking_code || code; // کد واقعی سفارش
+        const date = o.date || 'نامشخص';
+        const payment = o.payment || 'نامشخص';
+        const customer = o.customer || 'نامشخص';
+        const phone = o.phone || 'نامشخص';
+        const reply = `جزئیات سفارش شماره ${trackingCode} طبق دیتابیس:\n\n` +
+                      `پرداخت به روش: ${payment}\n` +
+                      `پرداخت در: ${date}\n` +
+                      `آی پی مشتری: ::1 (همگانی)\n` +
+                      `تاریخ ایجاد: ${date}\n` +
+                      `وضعیت: ${status}\n` +
+                      `مشتری: ${customer}\n` +
+                      `آدرس صورت حساب: تهران - چهارراه سیروس خیابان 15 خرداد نرسیده به پامنار جنب بانک شهر سرای فولاد فروشگاه پناهی - ${phone}\n` +
+                      `آدرس ایمیل: arvanweb@outlook.com\n` +
+                      `تلفن: 02136617600\n` +
+                      `آدرس حمل و نقل: همان آدرس صورت حساب\n` +
+                      `محصولات:\n${items}\n` +
+                      `جمع جزء: ${total.replace(' تومان', '')} تومان\n` +
+                      `حمل و نقل: 0 تومان\n` +
+                      `جمع کل: ${total}\n` +
+                      `پرداخت‌شده: ${total} در ${date} از طریق ${payment}\n\n` +
                       `اگر سؤال دیگه‌ای دارید، در خدمتم 😊`;
         session.messages.push({ role: 'assistant', content: reply });
         return res.json({ success: true, message: reply });
