@@ -142,7 +142,7 @@ app.post('/api/chat', async (req, res) => {
   }
 
   // آدرس API وردپرس خودت رو اینجا بذار
-  const SHOP_API_URL = 'https://apmarket2021.ir/ai-shop-api.php'; // فقط این خط رو عوض کن!
+  const SHOP_API_URL = 'https://shikpooshaan.ir/ai-shop-api.php'; // فقط این خط رو عوض کن!
 
   const tools = [
     {
