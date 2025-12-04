@@ -44,7 +44,7 @@ const getSession = (id) => {
 
 const bot = new Telegraf(TELEGRAM_BOT_TOKEN);
 
-// تلگرام (پذیرش و رد)
+// تلگرام (فقط پذیرش و رد)
 bot.action(/accept_(.+)/, async (ctx) => {
   const short = ctx.match[1];
   const info = botSessions.get(short);
@@ -107,7 +107,7 @@ app.post('/api/connect-human', async (req, res) => {
   res.json({ success: true, pending: true });
 });
 
-// دستیار واقعی — ۱۰۰٪ از دیتابیس، دقیق، بدون سوال اضافه
+// دستیار واقعی — ۱۰۰٪ از دیتابیس، بدون سوال اضافه
 const SHOP_API_URL = 'https://shikpooshaan.ir/ai-shop-api.php';
 
 app.post('/api/chat', async (req, res) => {
@@ -132,26 +132,15 @@ app.post('/api/chat', async (req, res) => {
       if (data.found) {
         const items = data.order.items.join('\n');
         const total = Number(data.order.total).toLocaleString();
-        const status = data.order.status;
-        const customerName = data.order.customer_name;
 
-        let reply = `سلام ${customerName} عزیز! 😊\n\n` +
-                    `سفارش شما با کد رهگیری \`${code}\` پیدا شد!\n\n` +
-                    `وضعیت فعلی: **${status}**\n` +
-                    `تاریخ ثبت: ${data.order.date}\n` +
-                    `درگاه پرداخت: ${data.order.payment}\n` +
-                    `مبلغ کل: ${total} تومان\n\n` +
-                    `محصولات:\n${items}\n\n`;
-
-        if (status.includes('لغو') || status.includes('cancelled')) {
-          reply += `سفارش شما لغو شده است.\nاگر سؤالی دارید در خدمتم 💙`;
-        } else {
-          reply += `سفارش شما ${status === 'در حال پردازش' ? 'در حال آماده‌سازی است' : 
-                     status === 'ارسال شده' ? 'توسط پست ارسال شده' : 
-                     status === 'تکمیل شده' ? 'با موفقیت تحویل شده' : 
-                     'در مرحله ' + status + ' قرار دارد'}\n\n` +
-                     `به‌زودی براتون ارسال می‌شه! اگر سؤالی بود در خدمتم 💙`;
-        }
+        const reply = `سلام ${data.order.customer_name || 'عزیز'}! 😊\n\n` +
+                      `سفارش شما با کد رهگیری \`${code}\` پیدا شد!\n\n` +
+                      `وضعیت فعلی: **${data.order.status}**\n` +
+                      `تاریخ ثبت: ${data.order.date}\n` +
+                      `درگاه پرداخت: ${data.order.payment}\n` +
+                      `مبلغ کل: ${total} تومان\n\n` +
+                      `محصولات:\n${items}\n\n` +
+                      `به‌زودی براتون ارسال می‌شه! اگر سؤالی بود در خدمتم 💙`;
 
         return res.json({ success: true, message: reply });
       } else {
@@ -162,7 +151,7 @@ app.post('/api/chat', async (req, res) => {
     }
   }
 
-  // خوش‌آمدگویی
+  // اگر کد نبود — خوش‌آمدگویی
   return res.json({ success: true, message: `سلام! 😊\n\n` +
     `من دستیار فروشگاه شیک پوشانم\n` +
     `برای پیگیری سفارش، فقط کد رهگیری رو بفرست (مثلاً 7123)\n` +
