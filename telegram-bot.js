@@ -9,7 +9,7 @@ console.log('='.repeat(60));
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const ADMIN_TELEGRAM_ID = process.env.ADMIN_TELEGRAM_ID;
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3000';
+const BACKEND_URL = process.env.BACKEND_URL || 'https://ai-chat-support-production.up.railway.app';
 
 // Validate
 if (!TELEGRAM_BOT_TOKEN || !ADMIN_TELEGRAM_ID) {
