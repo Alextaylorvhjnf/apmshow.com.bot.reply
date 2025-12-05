@@ -22,10 +22,11 @@ if (!BASE_URL.startsWith('http')) BASE_URL = 'https://' + BASE_URL;
 
 // ==================== اتصال به دیتابیس ====================
 const dbConfig = {
-    host: process.env.DB_HOST || 'localhost',
-    user: process.env.DB_USER || 'apmsho_shikpooshan',
-    password: process.env.DB_PASSWORD || '5W2nn}@tkm8926G*',
-    database: process.env.DB_NAME || 'apmsho_shikpooshan',
+    host: process.env.MYSQLHOST || process.env.DB_HOST || 'localhost',
+    port: process.env.MYSQLPORT || 3306,
+    user: process.env.MYSQLUSER || process.env.DB_USER || 'apmsho_shikpooshan',
+    password: process.env.MYSQLPASSWORD || process.env.DB_PASS || '5W2nn}@tkm8926G*',
+    database: process.env.MYSQLDATABASE || process.env.DB_NAME || 'apmsho_shikpooshan',
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0
