@@ -130,7 +130,20 @@ app.post('/webhook', async (req, res) => {
   res.json({ success: true });
 });
 
-// وقتی هنوز اپراتور وصل نشده (پیگیری سفارش از دیتابیس)
+// اتصال به اپراتور
+app.post('/api/connect-human', async (req, res) => {
+  const { sessionId, userInfo } = req.body;
+  getSession(sessionId).userInfo = userInfo || {};
+
+  await axios.post(`${BASE_URL}/webhook`, {
+    event: 'new_session',
+    data: { sessionId, userInfo, userMessage: 'درخواست اتصال' }
+  }).catch(() => {});
+
+  res.json({ success: true, pending: true });
+});
+
+// ==================== پیگیری سفارش از دیتابیس واقعی ====================
 const SHOP_API_URL = 'https://shikpooshaan.ir/ai-shop-api.php';
 
 app.post('/api/chat', async (req, res) => {
@@ -167,7 +180,7 @@ app.post('/api/chat', async (req, res) => {
 
         return res.json({ success: true, message: reply });
       } else {
-        return res.json({ success: true, message: `سفارش با کد \`${code}\` پیدا نشد.\nلطفاً کد رو دوباره چک کنید 🙏` });
+        return res.json({ success: true, message: `سفارش با کد \`${code}\` پیدا نشد.\nلطفاً کد رهگیری رو دوباره چک کنید 🙏` });
       }
     } catch (err) {
       return res.json({ success: true, message: 'الان نتونستم سفارش رو چک کنم 🙏\nچند لحظه دیگه امتحان کنید' });
@@ -177,24 +190,9 @@ app.post('/api/chat', async (req, res) => {
   return res.json({ success: true, message: 'سلام! 😊\n\nکد رهگیری بفرستید تا وضعیت سفارشتون رو بگم' });
 });
 
-// اتصال به اپراتور
-app.post('/api/connect-human', async (req, res) => {
-  const { sessionId, userInfo } = req.body;
-  getSession(sessionId).userInfo = userInfo || {};
-
-  await axios.post(`${BASE_URL}/webhook`, {
-    event: 'new_session',
-    data: { sessionId, userInfo, userMessage: 'درخواست اتصال' }
-  }).catch(() => {});
-
-  res.json({ success: true, pending: true });
-});
-
-// ==================== سوکت – فایل و ویس + پیام کاربر → تلگرام ====================
+// ==================== سوکت – فایل و ویس ====================
 io.on('connection', (socket) => {
-  socket.on('join-session', (sessionId) => {
-    socket.join(sessionId);
-  });
+  socket.on('join-session', (sessionId) => socket.join(sessionId));
 
   socket.on('user-message', async ({ sessionId, message }) => {
     if (!sessionId || !message) return;
