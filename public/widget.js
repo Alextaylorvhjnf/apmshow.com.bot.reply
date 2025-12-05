@@ -1,4 +1,4 @@
-class ChatWidget {
+ class ChatWidget {
     constructor(options = {}) {
         this.options = {
             backendUrl: options.backendUrl || window.location.origin,
@@ -6,7 +6,6 @@ class ChatWidget {
             theme: options.theme || 'default',
             ...options
         };
-
         this.state = {
             isOpen: false,
             isConnected: false,
@@ -17,23 +16,20 @@ class ChatWidget {
             isTyping: false,
             isConnecting: false
         };
-
+        // برای چشمک زدن تب و صدا
         this.tabNotificationInterval = null;
         this.originalTitle = document.title;
         this.tabNotifyText = 'پیام جدید از پشتیبانی';
-
         this.init();
     }
-
     init() {
         this.state.sessionId = this.generateSessionId();
         this.injectStyles();
         this.injectHTML();
-        this.initElements();
         this.initEvents();
         this.connectWebSocket();
+        console.log('Chat Widget initialized with session:', this.state.sessionId);
     }
-
     generateSessionId() {
         let sessionId = localStorage.getItem('chat_session_id');
         if (!sessionId) {
@@ -42,112 +38,112 @@ class ChatWidget {
         }
         return sessionId;
     }
-
     injectStyles() {
-        const link = document.createElement('link');
-        link.rel = 'stylesheet';
-        link.href = `${this.options.backendUrl}/widget.css`;
-        document.head.appendChild(link);
-
+        if (!document.querySelector('link[href*="widget.css"]')) {
+            const link = document.createElement('link');
+            link.rel = 'stylesheet';
+            link.href = `${this.options.backendUrl}/widget.css`;
+            link.crossOrigin = 'anonymous';
+            document.head.appendChild(link);
+        }
+        // اضافه کردن انیمیشن pulse برای دکمه
         const style = document.createElement('style');
         style.textContent = `
             @keyframes pulse {
                 0% { transform: scale(1); }
-                50% { transform: scale(1.2); }
+                50% { transform: scale(1.18); }
                 100% { transform: scale(1); }
             }
-            .chat-toggle-btn.pulse { animation: pulse 0.6s ease-in-out; }
+            .chat-toggle-btn.pulse {
+                animation: pulse 0.6s ease-in-out;
+            }
             .notification-badge {
                 position: absolute;
-                top: -10px;
-                right: -10px;
+                top: -8px;
+                right: -8px;
                 background: #e74c3c;
                 color: white;
-                font-size: 12px;
+                font-size: 11px;
                 font-weight: bold;
-                min-width: 22px;
-                height: 22px;
+                min-width: 18px;
+                height: 18px;
                 border-radius: 50%;
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                border: 3px solid white;
-                box-shadow: 0 2px 10px rgba(0,0,0,0.4);
-                z-index: 10;
+                border: 2px solid white;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.3);
             }
-            .attach-btn, .voice-btn {
-                background: #3498db;
-                color: white;
-                border: none;
-                width: 40px;
-                height: 40px;
-                border-radius: 50%;
-                cursor: pointer;
-                margin: 0 5px;
-                font-size: 18px;
-            }
-            .voice-btn.recording { background: #e74c3c !important; }
-            .file-input { display: none; }
         `;
         document.head.appendChild(style);
     }
-
     injectHTML() {
         this.container = document.createElement('div');
         this.container.className = 'chat-widget';
         this.container.innerHTML = `
             <button class="chat-toggle-btn">
                 <i class="fas fa-comment-dots"></i>
-                <span class="notification-badge" style="display: none;">0</span>
+                <span class="notification-badge" style="display: none">0</span>
             </button>
-
             <div class="chat-window">
                 <div class="chat-header">
                     <div class="header-left">
-                        <div class="chat-logo"><i class="fas fa-robot"></i></div>
+                        <div class="chat-logo"><i class=""></i></div>
                         <div class="chat-title">
                             <h3>پشتیبان هوشمند</h3>
                             <p>پاسخگوی سوالات شما</p>
                         </div>
                     </div>
                     <div class="header-right">
-                        <div class="chat-status"><span class="status-dot"></span><span>آنلاین</span></div>
+                        <div class="chat-status">
+                            <span class="status-dot"></span>
+                            <span>آنلاین</span>
+                        </div>
                         <button class="close-btn"><i class="fas fa-times"></i></button>
                     </div>
                 </div>
-
-                <div class="chat-messages"></div>
-
-                <div class="connection-status"><div class="status-message"><i class="fas fa-wifi"></i><span>در حال اتصال...</span></div></div>
-                <div class="typing-indicator"><div class="typing-dots"><span></span><span></span><span></span></div><span>در حال تایپ...</span></div>
-
+                <div class="chat-messages">
+                    <div class="message system">
+                        <div class="message-text">
+                            سلام! من دستیار هوشمند شما هستم. چطور می‌تونم کمکتون کنم؟
+                        </div>
+                        <div class="message-time">همین الان</div>
+                    </div>
+                </div>
+                <div class="connection-status">
+                    <div class="status-message">
+                        <i class="fas fa-wifi"></i>
+                        <span>در حال اتصال...</span>
+                    </div>
+                </div>
+                <div class="typing-indicator">
+                    <div class="typing-dots">
+                        <span></span><span></span><span></span>
+                    </div>
+                    <span>در حال تایپ...</span>
+                </div>
                 <div class="operator-info">
                     <div class="operator-card">
                         <div class="operator-avatar"><i class="fas fa-user-tie"></i></div>
                         <div class="operator-details">
-                            <h4>اپراتور انسانی</h4>
+                            <h4><i class="fas fa-shield-alt"></i> اپراتور انسانی</h4>
                             <p>در حال حاضر با پشتیبان انسانی در ارتباط هستید</p>
                         </div>
                     </div>
                 </div>
-
                 <div class="chat-input-area">
                     <div class="input-wrapper">
                         <textarea class="message-input" placeholder="پیام خود را بنویسید..." rows="1"></textarea>
-                        <div class="input-buttons"></div>
                         <button class="send-btn"><i class="fas fa-paper-plane"></i></button>
                     </div>
                     <button class="human-support-btn">
-                        <i class="fas fa-user-headset"></i> اتصال به اپراتور انسانی
+                        <i class="fas fa-user-headset"></i>
+                        اتصال به اپراتور انسانی
                     </button>
                 </div>
             </div>
         `;
-
         document.body.appendChild(this.container);
-    }
-
-    initElements() {
         this.elements = {
             toggleBtn: this.container.querySelector('.chat-toggle-btn'),
             chatWindow: this.container.querySelector('.chat-window'),
@@ -160,15 +156,14 @@ class ChatWidget {
             connectionStatus: this.container.querySelector('.connection-status'),
             operatorInfo: this.container.querySelector('.operator-info'),
             notificationBadge: this.container.querySelector('.notification-badge'),
-            inputButtons: this.container.querySelector('.input-buttons')
+            chatStatus: this.container.querySelector('.chat-status')
         };
     }
-
     initEvents() {
         this.elements.toggleBtn.addEventListener('click', () => this.toggleChat());
         this.elements.closeBtn.addEventListener('click', () => this.closeChat());
         this.elements.sendBtn.addEventListener('click', () => this.sendMessage());
-        this.elements.messageInput.addEventListener('keydown', e => {
+        this.elements.messageInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 this.sendMessage();
@@ -176,204 +171,184 @@ class ChatWidget {
         });
         this.elements.messageInput.addEventListener('input', () => this.resizeTextarea());
         this.elements.humanSupportBtn.addEventListener('click', () => this.connectToHuman());
+        document.addEventListener('click', (e) => {
+            if (this.state.isOpen && !this.elements.chatWindow.contains(e.target) && !this.elements.toggleBtn.contains(e.target)) {
+                this.closeChat();
+            }
+        });
     }
-
     connectWebSocket() {
-        const wsUrl = this.options.backendUrl.replace('http', 'ws');
-        this.state.socket = io(wsUrl, { transports: ['websocket', 'polling'] });
-
-        this.state.socket.on('connect', () => {
-            this.state.isConnected = true;
-            this.updateConnectionStatus(true);
-            this.state.socket.emit('join-session', this.state.sessionId);
-        });
-
-        this.state.socket.on('operator-connected', () => {
-            this.state.operatorConnected = true;
-            this.elements.operatorInfo.classList.add('active');
-            this.addMessage('system', 'اپراتور انسانی متصل شد! حالا می‌تونید فایل و ویس هم بفرستید 😊');
-            this.addFileAndVoiceInputs();
-        });
-
-        this.state.socket.on('operator-message', data => this.addMessage('operator', data.message));
-
-        this.state.socket.on('connect_error', () => this.updateConnectionStatus(false));
+        try {
+            const wsUrl = this.options.backendUrl.replace('http', 'ws');
+            this.state.socket = io(wsUrl, {
+                transports: ['websocket', 'polling'],
+                reconnection: true,
+                reconnectionAttempts: 5
+            });
+            this.state.socket.on('connect', () => {
+                console.log('WebSocket connected');
+                this.state.isConnected = true;
+                this.updateConnectionStatus(true);
+                this.state.socket.emit('join-session', this.state.sessionId);
+            });
+            this.state.socket.on('operator-connected', (data) => {
+                this.handleOperatorConnected(data);
+            });
+            this.state.socket.on('operator-message', (data) => {
+                this.addMessage('operator', data.message);
+            });
+            this.state.socket.on('connect_error', () => {
+                this.updateConnectionStatus(false);
+            });
+        } catch (error) {
+            console.error('WebSocket connection failed:', error);
+        }
     }
-
-    addFileAndVoiceInputs() {
-        const buttons = this.elements.inputButtons;
-
-        // فایل
-        const fileInput = document.createElement('input');
-        fileInput.type = 'file';
-        fileInput.className = 'file-input';
-        buttons.appendChild(fileInput);
-
-        const fileBtn = document.createElement('button');
-        fileBtn.innerHTML = '<i class="fas fa-paperclip"></i>';
-        fileBtn.className = 'attach-btn';
-        fileBtn.onclick = () => fileInput.click();
-        buttons.appendChild(fileBtn);
-
-        fileInput.onchange = e => {
-            const file = e.target.files[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = ev => {
-                const base64 = ev.target.result.split(',')[1];
-                this.state.socket.emit('user-file', {
-                    sessionId: this.state.sessionId,
-                    fileName: file.name,
-                    fileBase64: base64
-                });
-                this.addMessage('user', `فایل ارسال شد: ${file.name}`);
-            };
-            reader.readAsDataURL(file);
-        };
-
-        // ویس
-        let recorder, voiceChunks = [];
-        const voiceBtn = document.createElement('button');
-        voiceBtn.innerHTML = '<i class="fas fa-microphone"></i>';
-        voiceBtn.className = 'voice-btn';
-        buttons.appendChild(voiceBtn);
-
-        voiceBtn.onmousedown = async () => {
-            voiceChunks = [];
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            recorder = new MediaRecorder(stream);
-            recorder.ondataavailable = e => voiceChunks.push(e.data);
-            recorder.onstop = () => {
-                const blob = new Blob(voiceChunks, { type: 'audio/webm' });
-                const reader = new FileReader();
-                reader.onload = ev => {
-                    const base64 = ev.target.result.split(',')[1];
-                    this.state.socket.emit('user-voice', {
-                        sessionId: this.state.sessionId,
-                        voiceBase64: base64
-                    });
-                    this.addMessage('user', 'ویس ارسال شد');
-                };
-                reader.readAsDataURL(blob);
-            };
-            recorder.start();
-            voiceBtn.classList.add('recording');
-        };
-
-        voiceBtn.onmouseup = voiceBtn.onmouseleave = () => {
-            if (recorder) recorder.stop();
-            voiceBtn.classList.remove('recording');
-        };
+    updateConnectionStatus(connected) {
+        if (connected) {
+            this.elements.connectionStatus.classList.remove('active');
+            this.elements.chatStatus.innerHTML = `<span class="status-dot"></span><span>آنلاین</span>`;
+        } else {
+            this.elements.connectionStatus.classList.add('active');
+        }
     }
-
     toggleChat() {
         this.state.isOpen = !this.state.isOpen;
         this.elements.chatWindow.classList.toggle('active');
         if (this.state.isOpen) {
             this.elements.messageInput.focus();
-            this.resetNotification();
+            this.resetNotification(); // مهم: وقتی باز کرد، نوتیفیکیشن صفر بشه
         }
     }
-
     closeChat() {
         this.state.isOpen = false;
         this.elements.chatWindow.classList.remove('active');
     }
-
     resizeTextarea() {
-        const ta = this.elements.messageInput;
-        ta.style.height = 'auto';
-        ta.style.height = Math.min(ta.scrollHeight, 120) + 'px';
+        const textarea = this.elements.messageInput;
+        textarea.style.height = 'auto';
+        textarea.style.height = Math.min(textarea.scrollHeight, 100) + 'px';
     }
-
     async sendMessage() {
-        const msg = this.elements.messageInput.value.trim();
-        if (!msg || this.state.isTyping) return;
-
-        this.addMessage('user', msg);
+        const message = this.elements.messageInput.value.trim();
+        if (!message || this.state.isTyping) return;
+        this.addMessage('user', message);
         this.elements.messageInput.value = '';
         this.resizeTextarea();
         this.setTyping(true);
-
-        if (this.state.operatorConnected) {
-            this.state.socket.emit('user-message', { sessionId: this.state.sessionId, message: msg });
-        } else {
-            const res = await fetch(`${this.options.backendUrl}/api/chat`, {
+        try {
+            if (this.state.operatorConnected) {
+                this.state.socket.emit('user-message', {
+                    sessionId: this.state.sessionId,
+                    message: message
+                });
+                console.log('پیام به اپراتور انسانی ارسال شد');
+            } else {
+                await this.sendToAI(message);
+            }
+        } catch (error) {
+            console.error('Send message error:', error);
+            this.addMessage('system', 'خطا در ارسال پیام. لطفاً دوباره تلاش کنید.');
+        } finally {
+            this.setTyping(false);
+        }
+    }
+    async sendToAI(message) {
+        // ... همون کد قبلی (بدون تغییر)
+        try {
+            const response = await fetch(`${this.options.backendUrl}/api/chat`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: msg, sessionId: this.state.sessionId })
+                body: JSON.stringify({ message, sessionId: this.state.sessionId })
             });
-            const data = await res.json();
-            if (data.success) this.addMessage('assistant', data.message);
+            const data = await response.json();
+            if (data.success) {
+                this.addMessage('assistant', data.message);
+                if (data.requiresHuman) {
+                    this.elements.humanSupportBtn.innerHTML = `<i class="fas fa-user-headset"></i> اتصال به اپراتور انسانی (پیشنهاد سیستم)`;
+                    this.elements.humanSupportBtn.style.background = '#ff9500';
+                }
+            }
+        } catch (error) {
+            this.addMessage('system', 'خطا در ارتباط با سرور');
         }
-
-        this.setTyping(false);
     }
-
     async connectToHuman() {
         if (this.state.operatorConnected || this.state.isConnecting) return;
         this.state.isConnecting = true;
         this.elements.humanSupportBtn.disabled = true;
-        this.elements.humanSupportBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> در حال اتصال...';
-
+        this.elements.humanSupportBtn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> در حال اتصال...`;
         try {
+            const userInfo = { name: 'کاربر سایت', page: location.href };
             const res = await fetch(`${this.options.backendUrl}/api/connect-human`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ sessionId: this.state.sessionId, userInfo: { page: location.href } })
+                body: JSON.stringify({ sessionId: this.state.sessionId, userInfo })
             });
             const data = await res.json();
-
             if (data.success) {
+                this.state.operatorConnected = true;
+                this.elements.operatorInfo.classList.add('active');
                 this.addMessage('system', 'در حال اتصال به اپراتور انسانی...');
+                this.elements.humanSupportBtn.innerHTML = `<i class="fas fa-user-check"></i> متصل به اپراتور`;
+                this.elements.humanSupportBtn.style.background = 'linear-gradient(145deg, #2ecc71, #27ae60)';
+                this.elements.humanSupportBtn.disabled = true;
+            } else {
+                this.resetHumanSupportButton();
             }
         } catch (err) {
-            this.addMessage('system', 'خطا در اتصال به اپراتور');
-            this.elements.humanSupportBtn.innerHTML = '<i class="fas fa-user-headset"></i> اتصال به اپراتور انسانی';
-            this.elements.humanSupportBtn.disabled = false;
+            this.addMessage('system', 'خطا در اتصال');
+            this.resetHumanSupportButton();
         } finally {
             this.state.isConnecting = false;
         }
     }
-
-    updateConnectionStatus(connected) {
-        if (connected) {
-            this.elements.connectionStatus.style.display = 'none';
-        } else {
-            this.elements.connectionStatus.style.display = 'block';
-        }
+    resetHumanSupportButton() {
+        this.elements.humanSupportBtn.innerHTML = `<i class="fas fa-user-headset"></i> اتصال به اپراتور انسانی`;
+        this.elements.humanSupportBtn.style.background = '#ff6b6b';
+        this.elements.humanSupportBtn.disabled = false;
     }
-
-    // صدا (دینگ آیفون)
+    handleOperatorConnected(data) {
+        this.state.operatorConnected = true;
+        this.elements.operatorInfo.classList.add('active');
+        this.addMessage('system', data.message || 'اپراتور متصل شد!');
+    }
+    // صدا + نوتیفیکیشن + چشمک تب
     playNotificationSound() {
-        const audio = new Audio('https://cdn.jsdelivr.net/gh/nokeedev/iphone-sms-tri-tone@master/tri-tone.mp3');
-        audio.volume = 0.8;
-        audio.play().catch(() => {});
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(600, audioCtx.currentTime + 0.1);
+        gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+        osc.start(audioCtx.currentTime);
+        osc.stop(audioCtx.currentTime + 0.3);
     }
-
-    showNotification() {
-        let count = (parseInt(this.elements.notificationBadge.textContent) || 0) + 1;
-        this.elements.notificationBadge.textContent = count > 99 ? '99+' : count;
+    showNotification(count = 1) {
+        let current = parseInt(this.elements.notificationBadge.textContent) || 0;
+        current += count;
+        this.elements.notificationBadge.textContent = current;
         this.elements.notificationBadge.style.display = 'flex';
         this.elements.toggleBtn.classList.add('pulse');
         setTimeout(() => this.elements.toggleBtn.classList.remove('pulse'), 600);
     }
-
     resetNotification() {
         this.elements.notificationBadge.textContent = '0';
         this.elements.notificationBadge.style.display = 'none';
         this.stopTabNotification();
     }
-
     startTabNotification() {
         if (this.tabNotificationInterval) return;
-        let toggle = false;
+        let toggled = false;
         this.tabNotificationInterval = setInterval(() => {
-            document.title = toggle ? this.originalTitle : this.tabNotifyText;
-            toggle = !toggle;
+            document.title = toggled ? this.originalTitle : this.tabNotifyText;
+            toggled = !toggled;
         }, 1500);
     }
-
     stopTabNotification() {
         if (this.tabNotificationInterval) {
             clearInterval(this.tabNotificationInterval);
@@ -381,51 +356,46 @@ class ChatWidget {
             document.title = this.originalTitle;
         }
     }
-
     addMessage(type, text) {
-        const el = document.createElement('div');
-        el.className = `message ${type}`;
-
+        const messageEl = document.createElement('div');
+        messageEl.className = `message ${type}`;
         const time = new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
-
-        let sender = '';
-        if (type === 'user') sender = 'شما';
-        if (type === 'assistant' || type === 'system') sender = 'پشتیبان هوشمند';
-        if (type === 'operator') sender = 'اپراتور';
-
-        el.innerHTML = `
-            ${sender ? `<div class="message-sender"><span>${sender}</span></div>` : ''}
+        let icon = '', sender = '';
+        if (type === 'user') { icon = '<i class="fas fa-user"></i>'; sender = 'شما'; }
+        if (type === 'assistant') { icon = '<i class="fas fa-robot"></i>'; sender = 'پشتیبان هوشمند'; }
+        if (type === 'operator') { icon = '<i class="fas fa-user-tie"></i>'; sender = 'اپراتور انسانی'; }
+        messageEl.innerHTML = `
+            ${icon ? `<div class="message-sender">${icon}<span>${sender}</span></div>` : ''}
             <div class="message-text">${this.escapeHtml(text)}</div>
             <div class="message-time">${time}</div>
         `;
-
-        this.elements.messagesContainer.appendChild(el);
+        this.elements.messagesContainer.appendChild(messageEl);
         this.elements.messagesContainer.scrollTop = this.elements.messagesContainer.scrollHeight;
-
-        if (type !== 'user') {
+        this.state.messages.push({ type, text, time });
+        // صدا و نوتیفیکیشن فقط برای پیام‌های غیر از کاربر
+        if (type === 'operator' || type === 'assistant' || type === 'system') {
             this.playNotificationSound();
             if (!this.state.isOpen) this.showNotification();
             if (document.hidden) this.startTabNotification();
         }
     }
-
     setTyping(typing) {
         this.state.isTyping = typing;
         this.elements.typingIndicator.classList.toggle('active', typing);
         this.elements.sendBtn.disabled = typing;
         this.elements.messageInput.disabled = typing;
+        if (!typing) this.elements.messageInput.focus();
     }
-
     escapeHtml(text) {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
     }
 }
-
 // راه‌اندازی خودکار
 if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => new ChatWidget());
+    document.addEventListener('DOMContentLoaded', () => window.ChatWidget = new ChatWidget());
 } else {
-    new ChatWidget();
+    window.ChatWidget = new ChatWidget();
 }
+window.initChatWidget = (options) => new ChatWidget(options);
