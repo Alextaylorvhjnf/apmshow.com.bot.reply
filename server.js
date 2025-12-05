@@ -7,7 +7,9 @@ const helmet = require('helmet');
 const axios = require('axios');
 const NodeCache = require('node-cache');
 const { Telegraf } = require('telegraf');
+const mysql = require('mysql2/promise'); // اضافه برای اتصال MySQL
 require('dotenv').config();
+
 // ==================== تنظیمات ====================
 const PORT = process.env.PORT || 3000;
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -16,6 +18,32 @@ let BASE_URL = process.env.RAILWAY_STATIC_URL || process.env.BACKEND_URL || '';
 BASE_URL = BASE_URL.replace(/\/+$/, '').trim();
 if (!BASE_URL) BASE_URL = 'https://ai-chat-support-production.up.railway.app';
 if (!BASE_URL.startsWith('http')) BASE_URL = 'https://' + BASE_URL;
+
+// ==================== اتصال دیتابیس ====================
+const DB_HOST = process.env.DB_HOST || 'localhost';
+const DB_USER = process.env.DB_USER || 'apmsho_shikpooshan';
+const DB_PASSWORD = process.env.DB_PASSWORD || '5W2nn}@tkm8926G*';
+const DB_NAME = process.env.DB_NAME || 'apmsho_shikpooshan';
+
+let db;
+(async () => {
+  try {
+    db = await mysql.createPool({
+      host: DB_HOST,
+      user: DB_USER,
+      password: DB_PASSWORD,
+      database: DB_NAME,
+      waitForConnections: true,
+      connectionLimit: 10,
+      queueLimit: 0,
+      charset: 'utf8mb4'
+    });
+    console.log('✅ اتصال دیتابیس موفق بود');
+  } catch (err) {
+    console.error('❌ خطا در اتصال دیتابیس', err);
+  }
+})();
+
 // ==================== سرور ====================
 const app = express();
 const server = http.createServer(app);
@@ -25,6 +53,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.static(path.join(__dirname, 'public')));
+
 // ==================== کش ====================
 const cache = new NodeCache({ stdTTL: 3600 });
 const botSessions = new Map();
@@ -37,6 +66,7 @@ const getSession = (id) => {
   }
   return s;
 };
+
 // ==================== الگوریتم هوش داخلی ====================
 function internalAI(message, session) {
   const keywords = ['لباس', 'پیراهن', 'شلوار', 'کفش', 'پیشنهاد'];
@@ -53,8 +83,10 @@ function internalAI(message, session) {
   session.messages.push({ role: 'ai', content: 'در حال فکر...' });
   return 'جالب بود! 😊 بیشتر بگو، دوست دارم بدونم چی تو ذهنته. یا کد رهگیری بفرست.';
 }
+
 // ==================== ربات تلگرام ====================
 const bot = new Telegraf(TELEGRAM_BOT_TOKEN);
+
 // پذیرش درخواست
 bot.action(/accept_(.+)/, async (ctx) => {
   const short = ctx.match[1];
@@ -80,12 +112,14 @@ bot.action(/accept_(.+)/, async (ctx) => {
     .join('\n\n') || 'کاربر هنوز پیامی نفرستاده';
   await ctx.reply(`تاریخچه چت:\n\n${history}`);
 });
+
 // رد درخواست
 bot.action(/reject_(.+)/, async (ctx) => {
   const short = ctx.match[1];
   botSessions.delete(short);
   await ctx.answerCbQuery('رد شد');
 });
+
 // پیام اپراتور → ویجت
 bot.on('text', async (ctx) => {
   if (ctx.message.text.startsWith('/')) return;
@@ -94,8 +128,10 @@ bot.on('text', async (ctx) => {
   io.to(entry[1].fullId).emit('operator-message', { message: ctx.message.text });
   await ctx.reply('ارسال شد');
 });
+
 // وب‌هوک تلگرام
 app.post('/telegram-webhook', (req, res) => bot.handleUpdate(req.body, res));
+
 // درخواست جدید از ویجت — با صفحه و آی‌پی
 app.post('/webhook', async (req, res) => {
   if (req.body.event !== 'new_session') return res.json({ success: false });
@@ -122,6 +158,7 @@ app.post('/webhook', async (req, res) => {
   });
   res.json({ success: true });
 });
+
 // اتصال به اپراتور
 app.post('/api/connect-human', async (req, res) => {
   const { sessionId, userInfo } = req.body;
@@ -132,30 +169,40 @@ app.post('/api/connect-human', async (req, res) => {
   }).catch(() => {});
   res.json({ success: true, pending: true });
 });
+
 // ==================== پیگیری سفارش از دیتابیس واقعی ====================
 const SHOP_API_URL = 'https://shikpooshaan.ir/ai-shop-api.php';
 app.post('/api/chat', async (req, res) => {
   const { message, sessionId } = req.body;
   if (!message || !sessionId) return res.status(400).json({ error: 'داده ناقص' });
+
   const session = getSession(sessionId);
   session.messages.push({ role: 'user', content: message });
   const short = shortId(sessionId);
+
   if (botSessions.get(short)?.chatId) {
     return res.json({ operatorConnected: true });
   }
+
+  // استخراج کد رهگیری
   const code = message.match(/\d{4,}/)?.[0];
-  if (code) {
+
+  if (code && db) {
     try {
-      const result = await axios.post(SHOP_API_URL, { action: 'track_order', tracking_code: code }, { timeout: 8000 });
-      const data = result.data;
-      if (data.found) {
-        const items = data.order.items.join('\n');
-        const total = Number(data.order.total).toLocaleString();
-        const reply = `سلام ${data.order.customer_name || 'عزیز'}!\n\n` +
+      // کوئری اطلاعات سفارش از دیتابیس
+      const [rows] = await db.query(
+        'SELECT * FROM orders WHERE tracking_code=? LIMIT 1',
+        [code]
+      );
+      if (rows.length > 0) {
+        const order = rows[0];
+        const items = JSON.parse(order.items || '[]').join('\n');
+        const total = Number(order.total || 0).toLocaleString();
+        const reply = `سلام ${order.customer_name || 'عزیز'}!\n\n` +
                       `سفارش با کد \`${code}\` پیدا شد!\n\n` +
-                      `وضعیت: **${data.order.status}**\n` +
-                      `تاریخ ثبت: ${data.order.date}\n` +
-                      `درگاه پرداخت: ${data.order.payment}\n` +
+                      `وضعیت: **${order.status}**\n` +
+                      `تاریخ ثبت: ${order.date}\n` +
+                      `درگاه پرداخت: ${order.payment}\n` +
                       `مبلغ: ${total} تومان\n` +
                       `محصولات:\n${items}\n\n` +
                       `به‌زودی براتون ارسال می‌شه 😊`;
@@ -164,15 +211,19 @@ app.post('/api/chat', async (req, res) => {
         return res.json({ success: true, message: `سفارش با کد \`${code}\` پیدا نشد.\nلطفاً کد رهگیری رو دوباره چک کنید 🙏` });
       }
     } catch (err) {
+      console.error('خطا در کوئری سفارش:', err);
       return res.json({ success: true, message: 'الان نتونستم سفارش رو چک کنم 🙏\nچند لحظه دیگه امتحان کنید' });
     }
   }
+
   const aiReply = internalAI(message, session);
   return res.json({ success: true, message: aiReply });
 });
+
 // ==================== سوکت – فایل و ویس ====================
 io.on('connection', (socket) => {
   socket.on('join-session', (sessionId) => socket.join(sessionId));
+
   socket.on('user-message', async ({ sessionId, message }) => {
     if (!sessionId || !message) return;
     const short = shortId(sessionId);
@@ -180,7 +231,7 @@ io.on('connection', (socket) => {
     if (info?.chatId) {
       const userName = info.userInfo?.name || 'ناشناس';
       const userPage = info.userInfo?.page ? info.userInfo.page : 'نامشخص';
-      const userIp = info.userInfo?.ip ? info.userInfo.ip : 'نامشخص';
+      const userIp = info.userInfo?.ip ? info.userInfo.ip : 'ناشخص';
       await bot.telegram.sendMessage(info.chatId, `
 پیام جدید از کاربر
 کد: ${short}
@@ -192,6 +243,7 @@ ${message}
       `.trim());
     }
   });
+
   // ارسال فایل
   socket.on('user-file', async ({ sessionId, fileName, fileBase64 }) => {
     const short = shortId(sessionId);
@@ -201,6 +253,7 @@ ${message}
       await bot.telegram.sendDocument(info.chatId, { source: buffer, filename: fileName });
     }
   });
+
   // ارسال ویس
   socket.on('user-voice', async ({ sessionId, voiceBase64 }) => {
     const short = shortId(sessionId);
@@ -211,7 +264,9 @@ ${message}
     }
   });
 });
+
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+
 // ==================== راه‌اندازی ====================
 server.listen(PORT, '0.0.0.0', async () => {
   console.log(`سرور روی پورت ${PORT} فعال شد`);
@@ -223,4 +278,4 @@ server.listen(PORT, '0.0.0.0', async () => {
     console.error('وب‌هوک خطا داد → Polling فعال شد');
     bot.launch();
   }
-});  
+});
