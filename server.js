@@ -161,65 +161,38 @@ function analyzeMessage(message) {
 // ==================== سیستم پیگیری سفارش از دیتابیس ====================
 async function trackOrderFromDatabase(trackingCode) {
     try {
-        if (!dbPool) {
-            await initializeDatabase();
-        }
-        
-        // جستجو در جدول پست‌ها برای سفارش
-        const [orderRows] = await dbPool.execute(`
-            SELECT 
-                p.ID as order_id,
-                p.post_title as order_title,
-                p.post_date as order_date,
-                p.post_status as order_status,
-                pm.meta_value as order_total,
-                pm2.meta_value as payment_method,
-                pm3.meta_value as customer_name,
-                pm4.meta_value as tracking_number
-            FROM wp_posts p
-            LEFT JOIN wp_postmeta pm ON p.ID = pm.post_id AND pm.meta_key = '_order_total'
-            LEFT JOIN wp_postmeta pm2 ON p.ID = pm2.post_id AND pm2.meta_key = '_payment_method_title'
-            LEFT JOIN wp_postmeta pm3 ON p.ID = pm3.post_id AND pm3.meta_key = '_billing_first_name'
-            LEFT JOIN wp_postmeta pm4 ON p.ID = pm4.post_id AND pm4.meta_key = '_shipping_tracking_number'
-            WHERE p.post_type = 'shop_order'
-            AND (pm4.meta_value = ? OR p.ID = ?)
+        // کوئری مستقیم و ساده
+        const [orders] = await dbPool.execute(`
+            SELECT ID, post_title, post_date, post_status
+            FROM wp_posts
+            WHERE post_type = 'shop_order'
+            AND (ID = ? OR post_title LIKE ?)
             LIMIT 1
-        `, [trackingCode, parseInt(trackingCode) || 0]);
-        
-        if (orderRows.length === 0) {
-            // جستجوی دیگر در متاهای سفارش
-            const [metaRows] = await dbPool.execute(`
-                SELECT 
-                    p.ID as order_id,
-                    p.post_title as order_title,
-                    p.post_date as order_date,
-                    p.post_status as order_status
-                FROM wp_posts p
-                INNER JOIN wp_postmeta pm ON p.ID = pm.post_id
-                WHERE p.post_type = 'shop_order'
-                AND pm.meta_key LIKE '%tracking%'
-                AND pm.meta_value LIKE ?
-                LIMIT 1
-            `, [`%${trackingCode}%`]);
-            
-            if (metaRows.length === 0) {
-                return { found: false, message: 'سفارشی با این کد رهگیری یافت نشد.' };
-            }
-            
-            const order = metaRows[0];
-            return await getOrderDetails(order.order_id);
+        `, [parseInt(trackingCode), `%${trackingCode}%`]);
+
+        if (orders.length === 0) {
+            return { found: false };
         }
+
+        const order = orders[0];
         
-        const order = orderRows[0];
-        return await getOrderDetails(order.order_id);
-        
-    } catch (error) {
-        console.error('❌ خطا در پیگیری سفارش:', error);
-        return { 
-            found: false, 
-            message: 'خطا در اتصال به دیتابیس. لطفاً دوباره تلاش کنید.' 
+        // اطلاعات ساده برگردون
+        return {
+            found: true,
+            order: {
+                id: order.ID,
+                number: order.ID,
+                date: new Date(order.post_date).toLocaleDateString('fa-IR'),
+                status: order.post_status,
+                customer_name: 'مشتری'
+            }
         };
+
+    } catch (error) {
+        console.error('خطا:', error);
+        return { found: false };
     }
+}
 }
 
 async function getOrderDetails(orderId) {
