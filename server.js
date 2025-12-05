@@ -7,7 +7,7 @@ const helmet = require('helmet');
 const axios = require('axios');
 const NodeCache = require('node-cache');
 const { Telegraf } = require('telegraf');
-const mysql = require('mysql2/promise'); // اضافه برای اتصال MySQL
+const mysql = require('mysql2/promise');
 require('dotenv').config();
 
 // ==================== تنظیمات ====================
@@ -47,17 +47,18 @@ let db;
 // ==================== سرور ====================
 const app = express();
 const server = http.createServer(app);
-const io = socketIo(server, { cors: { origin: "*", methods: ["GET", "POST"] } });
+const io = socketIo(server, { cors: { origin: "*", methods: ["GET","POST"] } });
 app.use(cors({ origin: "*" }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ==================== کش ====================
+// ==================== کش و مدیریت جلسه ====================
 const cache = new NodeCache({ stdTTL: 3600 });
 const botSessions = new Map();
 const shortId = (id) => String(id).substring(0, 12);
+
 const getSession = (id) => {
   let s = cache.get(id);
   if (!s) {
@@ -67,7 +68,34 @@ const getSession = (id) => {
   return s;
 };
 
-// ==================== الگوریتم هوش داخلی پیشرفته ====================
+// ==================== تابع جستجوی محصولات ====================
+async function queryProducts(keyword, color, size) {
+  if (!db) return [];
+  try {
+    let query = `SELECT p.ID, p.post_title, pm_color.meta_value as color, pm_size.meta_value as size,
+                        pm_stock.meta_value as stock, pm_price.meta_value as price
+                 FROM wp_posts p
+                 LEFT JOIN wp_postmeta pm_color ON pm_color.post_id = p.ID AND pm_color.meta_key='attribute_pa_color'
+                 LEFT JOIN wp_postmeta pm_size ON pm_size.post_id = p.ID AND pm_size.meta_key='attribute_pa_size'
+                 LEFT JOIN wp_postmeta pm_stock ON pm_stock.post_id = p.ID AND pm_stock.meta_key='_stock_status'
+                 LEFT JOIN wp_postmeta pm_price ON pm_price.post_id = p.ID AND pm_price.meta_key='_price'
+                 WHERE p.post_type='product' AND p.post_status='publish'`;
+
+    if (color) query += ` AND pm_color.meta_value LIKE '%${color}%'`;
+    if (size) query += ` AND pm_size.meta_value LIKE '%${size}%'`;
+    if (keyword) query += ` AND p.post_title LIKE '%${keyword}%'`;
+
+    query += ` ORDER BY p.ID DESC LIMIT 5`;
+
+    const [rows] = await db.query(query);
+    return rows;
+  } catch (err) {
+    console.error('DB queryProducts error:', err);
+    return [];
+  }
+}
+
+// ==================== الگوریتم هوش داخلی ====================
 async function internalAI(message, session) {
   const keywords = ['لباس', 'پیراهن', 'شلوار', 'کفش', 'پیشنهاد', 'سایز', 'رنگ'];
   const hasSuggestion = keywords.some(k => message.includes(k));
@@ -75,31 +103,17 @@ async function internalAI(message, session) {
   if (hasSuggestion && db) {
     try {
       // استخراج رنگ و سایز از پیام
-      const colorMatch = message.match(/(قرمز|آبی|سفید|مشکی|سبز)/i);
-      const sizeMatch = message.match(/(S|M|L|XL|XXL|\d{36,})/i);
+      const colorMatch = message.match(/(قرمز|آبی|سفید|مشکی|سبز|زرد|نارنجی|صورتی)/i);
+      const sizeMatch = message.match(/(S|M|L|XL|XXL|\d{1,2})/i);
 
       const color = colorMatch ? colorMatch[0] : null;
       const size = sizeMatch ? sizeMatch[0] : null;
 
-      // کوئری محصولات موجود
-      let query = `SELECT p.ID, p.post_title, pm_color.meta_value as color, pm_size.meta_value as size,
-                          pm_stock.meta_value as stock
-                   FROM wp_posts p
-                   LEFT JOIN wp_postmeta pm_color ON pm_color.post_id = p.ID AND pm_color.meta_key='attribute_pa_color'
-                   LEFT JOIN wp_postmeta pm_size ON pm_size.post_id = p.ID AND pm_size.meta_key='attribute_pa_size'
-                   LEFT JOIN wp_postmeta pm_stock ON pm_stock.post_id = p.ID AND pm_stock.meta_key='_stock_status'
-                   WHERE p.post_type='product' AND p.post_status='publish'`;
-
-      if (color) query += ` AND pm_color.meta_value LIKE '%${color}%'`;
-      if (size) query += ` AND pm_size.meta_value LIKE '%${size}%'`;
-      query += ` ORDER BY p.ID DESC LIMIT 5`;
-
-      const [rows] = await db.query(query);
-
-      if (rows.length > 0) {
+      const products = await queryProducts(message, color, size);
+      if (products.length > 0) {
         let reply = 'این محصولات مطابق با درخواست شما هستند:\n\n';
-        rows.forEach(p => {
-          reply += `🛍 ${p.post_title}\nرنگ: ${p.color || 'نامشخص'} | سایز: ${p.size || 'نامشخص'} | موجودی: ${p.stock}\n`;
+        products.forEach(p => {
+          reply += `🛍 ${p.post_title}\nرنگ: ${p.color || 'نامشخص'} | سایز: ${p.size || 'نامشخص'} | موجودی: ${p.stock || 'نامشخص'} | قیمت: ${p.price || 'نامشخص'} تومان\n`;
           reply += `لینک محصول: ${BASE_URL}/?p=${p.ID}\n\n`;
         });
         return reply.trim();
@@ -124,7 +138,6 @@ async function internalAI(message, session) {
 // ==================== ربات تلگرام ====================
 const bot = new Telegraf(TELEGRAM_BOT_TOKEN);
 
-// پذیرش درخواست
 bot.action(/accept_(.+)/, async (ctx) => {
   const short = ctx.match[1];
   const info = botSessions.get(short);
@@ -150,14 +163,12 @@ bot.action(/accept_(.+)/, async (ctx) => {
   await ctx.reply(`تاریخچه چت:\n\n${history}`);
 });
 
-// رد درخواست
 bot.action(/reject_(.+)/, async (ctx) => {
   const short = ctx.match[1];
   botSessions.delete(short);
   await ctx.answerCbQuery('رد شد');
 });
 
-// پیام اپراتور → ویجت
 bot.on('text', async (ctx) => {
   if (ctx.message.text.startsWith('/')) return;
   const entry = [...botSessions.entries()].find(([_, v]) => v.chatId === ctx.chat.id);
@@ -166,10 +177,8 @@ bot.on('text', async (ctx) => {
   await ctx.reply('ارسال شد');
 });
 
-// وب‌هوک تلگرام
 app.post('/telegram-webhook', (req, res) => bot.handleUpdate(req.body, res));
 
-// درخواست جدید از ویجت — با صفحه و آی‌پی
 app.post('/webhook', async (req, res) => {
   if (req.body.event !== 'new_session') return res.json({ success: false });
   const { sessionId, userInfo, userMessage } = req.body.data;
@@ -196,7 +205,6 @@ app.post('/webhook', async (req, res) => {
   res.json({ success: true });
 });
 
-// اتصال به اپراتور
 app.post('/api/connect-human', async (req, res) => {
   const { sessionId, userInfo } = req.body;
   getSession(sessionId).userInfo = userInfo || {};
@@ -207,47 +215,46 @@ app.post('/api/connect-human', async (req, res) => {
   res.json({ success: true, pending: true });
 });
 
-// ==================== پیگیری سفارش از دیتابیس واقعی ====================
-const SHOP_API_URL = 'https://shikpooshaan.ir/ai-shop-api.php';
+// ==================== مسیر /api/chat ====================
 app.post('/api/chat', async (req, res) => {
   const { message, sessionId } = req.body;
   if (!message || !sessionId) return res.status(400).json({ error: 'داده ناقص' });
+
   const session = getSession(sessionId);
   session.messages.push({ role: 'user', content: message });
   const short = shortId(sessionId);
+
   if (botSessions.get(short)?.chatId) {
     return res.json({ operatorConnected: true });
   }
-  const code = message.match(/\d{4,}/)?.[0];
-  if (code) {
-    try {
-      const result = await axios.post(SHOP_API_URL, { action: 'track_order', tracking_code: code }, { timeout: 8000 });
-      const data = result.data;
-      if (data.found) {
-        const items = data.order.items.join('\n');
-        const total = Number(data.order.total).toLocaleString();
-        const reply = `سلام ${data.order.customer_name || 'عزیز'}!\n\n` +
-                      `سفارش با کد \`${code}\` پیدا شد!\n\n` +
-                      `وضعیت: **${data.order.status}**\n` +
-                      `تاریخ ثبت: ${data.order.date}\n` +
-                      `درگاه پرداخت: ${data.order.payment}\n` +
-                      `مبلغ: ${total} تومان\n` +
-                      `محصولات:\n${items}\n\n` +
-                      `به‌زودی براتون ارسال می‌شه 😊`;
-        return res.json({ success: true, message: reply });
-      } else {
-        return res.json({ success: true, message: `سفارش با کد \`${code}\` پیدا نشد.\nلطفاً کد رهگیری رو دوباره چک کنید 🙏` });
-      }
-    } catch (err) {
-      return res.json({ success: true, message: 'الان نتونستم سفارش رو چک کنم 🙏\nچند لحظه دیگه امتحان کنید' });
-    }
-  }
 
-  const aiReply = await internalAI(message, session);
-  return res.json({ success: true, message: aiReply });
+  try {
+    const colorList = ['قرمز','آبی','سبز','سفید','مشکی','زرد','نارنجی','صورتی'];
+    const sizeList = ['S','M','L','XL','XXL','۳','۴','۵','۶'];
+
+    let color = null, size = null;
+    colorList.forEach(c => { if(message.includes(c)) color=c; });
+    sizeList.forEach(s => { if(message.includes(s)) size=s; });
+
+    let keyword = message.replace(new RegExp(`(${[...colorList,...sizeList].join('|')})`, 'gi'),'').trim();
+
+    const products = await queryProducts(keyword, color, size);
+    if (products.length > 0) {
+      const items = products.map(p => `• ${p.post_title} | رنگ: ${p.color||'-'} | سایز: ${p.size||'-'} | قیمت: ${p.price||'-'} تومان | موجودی: ${p.stock||'-'}`).join('\n');
+      const reply = `عالی! محصولات پیشنهادی من بر اساس درخواستت:\n\n${items}`;
+      return res.json({ success: true, message: reply, items });
+    } else {
+      const aiReply = await internalAI(message, session);
+      return res.json({ success: true, message: aiReply, items: [] });
+    }
+  } catch (err) {
+    console.error('DB query error:', err);
+    const aiReply = await internalAI(message, session);
+    return res.json({ success: true, message: aiReply, items: [] });
+  }
 });
 
-// ==================== سوکت – فایل و ویس ====================
+// ==================== سوکت ====================
 io.on('connection', (socket) => {
   socket.on('join-session', (sessionId) => socket.join(sessionId));
   socket.on('user-message', async ({ sessionId, message }) => {
@@ -291,7 +298,7 @@ ${message}
 
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
-// ==================== راه‌اندازی ====================
+// ==================== راه‌اندازی سرور ====================
 server.listen(PORT, '0.0.0.0', async () => {
   console.log(`سرور روی پورت ${PORT} فعال شد`);
   try {
