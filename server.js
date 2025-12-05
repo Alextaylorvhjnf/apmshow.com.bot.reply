@@ -6,9 +6,10 @@ const helmet = require('helmet');
 const axios = require('axios');
 const NodeCache = require('node-cache');
 const { Telegraf } = require('telegraf');
+const multer = require('multer');
 require('dotenv').config();
 
-// ==================== تنظیمات ====================
+// تنظیمات
 const PORT = process.env.PORT || 3000;
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const ADMIN_TELEGRAM_ID = Number(process.env.ADMIN_TELEGRAM_ID);
@@ -18,20 +19,24 @@ BASE_URL = BASE_URL.replace(/\/+$/, '').trim();
 if (!BASE_URL) BASE_URL = 'https://ai-chat-support-production.up.railway.app';
 if (!BASE_URL.startsWith('http')) BASE_URL = 'https://' + BASE_URL;
 
-// ==================== سرور ====================
+console.log('Bot configured');
+console.log('Admin:', ADMIN_TELEGRAM_ID);
+console.log('Backend:', BASE_URL);
+
 const app = express();
 const server = http.createServer(app);
 
-// فقط اگر socket.io موجود باشه لود کن (جلوگیری از crash)
+// Socket.io — بدون crash
 let io;
 try {
   const socketIo = require('socket.io');
   io = socketIo(server, { 
     cors: { origin: "*", methods: ["GET", "POST"] },
-    maxHttpBufferSize: 1e8 // 100MB برای فایل و ویس
+    maxHttpBufferSize: 1e8
   });
+  console.log('Socket.io فعال شد');
 } catch (err) {
-  console.log('socket.io لود نشد، ولی سرور کار می‌کنه');
+  console.log('Socket.io غیرفعال شد، ولی سرور کار می‌کنه');
 }
 
 app.use(cors({ origin: "*" }));
@@ -53,9 +58,9 @@ const getSession = (id) => {
   return s;
 };
 
-// ==================== ربات تلگرام — بدون crash ====================
+// تلگرام بات — بدون crash
 let bot;
-if (TELEGRAM_BOT_TOKEN) {
+if (TELEGRAM_BOT_TOKEN && ADMIN_TELEGRAM_ID) {
   try {
     bot = new Telegraf(TELEGRAM_BOT_TOKEN);
 
@@ -63,13 +68,16 @@ if (TELEGRAM_BOT_TOKEN) {
       try {
         const short = ctx.match[1];
         const info = botSessions.get(short);
-        if (!info) return ctx.answerCbQuery('منقضی شده');
+        if (!info) return;
         botSessions.set(short, { ...info, chatId: ctx.chat.id });
         getSession(info.fullId).connectedToHuman = true;
         await ctx.answerCbQuery('پذیرفته شد');
         await ctx.editMessageText(`شما این گفتگو را پذیرفتید\nکاربر: ${info.userInfo?.name || 'ناشناس'}\nکد: ${short}`);
-        if (io) io.to(info.fullId).emit('operator-connected');
-      } catch (err) { console.log('خطا در accept:', err.message); }
+        if (io) io.to(info.fullId).emit('operator-connected', { message: 'اپراتور متصل شد!' });
+        const session = getSession(info.fullId);
+        const history = session.messages.filter(m => m.role === 'user').map(m => `کاربر: ${m.content}`).join('\n\n') || 'هیچ پیامی نیست';
+        await ctx.reply(`تاریخچه چت:\n\n${history}`);
+      } catch (err) {}
     });
 
     bot.action(/reject_(.+)/, async (ctx) => {
@@ -97,12 +105,13 @@ if (TELEGRAM_BOT_TOKEN) {
       }
     });
 
+    console.log('ربات تلگرام فعال شد');
   } catch (err) {
-    console.log('تلگرام بات لود نشد، ولی سرور کار می‌کنه');
+    console.log('ربات تلگرام لود نشد، ولی سرور کار می‌کنه');
   }
 }
 
-// ==================== وب‌هوک ویجت ====================
+// وب‌هوک ویجت
 app.post('/webhook', async (req, res) => {
   try {
     if (req.body.event !== 'new_session') return res.json({ success: false });
@@ -140,7 +149,7 @@ app.post('/api/connect-human', async (req, res) => {
   }
 });
 
-// ==================== دستیار واقعی — ۱۰۰٪ از دیتابیس ====================
+// دستیار — از دیتابیس
 const SHOP_API_URL = 'https://shikpooshaan.ir/ai-shop-api.php';
 
 app.post('/api/chat', async (req, res) => {
@@ -181,18 +190,17 @@ app.post('/api/chat', async (req, res) => {
           return res.json({ success: true, message: reply });
         }
       }
-      return res.json({ success: true, message: 'سفارش با این کد پیدا نشد. لطفاً کد رهگیری رو دوباره چک کنید 🙏' });
+      return res.json({ success: true, message: 'سفارش با این کد پیدا نشد. لطفاً کد رو دوباره چک کنید 🙏' });
     }
 
     return res.json({ success: true, message: 'سلام! 😊\n\nکد رهگیری بفرستید تا وضعیت سفارشتون رو بگم\nیا هر سؤالی دارید بپرسید!' });
 
   } catch (err) {
-    console.log('خطا در چت:', err.message);
     return res.json({ success: true, message: 'الان نتونستم جواب بدم 🙏\nچند لحظه دیگه امتحان کنید' });
   }
 });
 
-// سوکت — بدون crash
+// سوکت — فایل و ویس
 if (io) {
   io.on('connection', (socket) => {
     socket.on('join-session', (sessionId) => socket.join(sessionId));
@@ -225,14 +233,11 @@ if (io) {
   });
 }
 
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
+app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
-// ==================== راه‌اندازی بدون crash ====================
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`سرور فعال شد — پورت ${PORT}`);
-  console.log(`ویجت همیشه نمایش داده میشه!`);
+  console.log('ویجت همیشه نمایش داده میشه!');
 
   if (bot && TELEGRAM_BOT_TOKEN) {
     bot.telegram.setWebhook(`${BASE_URL}/telegram-webhook`).catch(() => {
