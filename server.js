@@ -13,7 +13,6 @@ require('dotenv').config();
 const PORT = process.env.PORT || 3000;
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const ADMIN_TELEGRAM_ID = Number(process.env.ADMIN_TELEGRAM_ID);
-const GROQ_API_KEY = process.env.GROQ_API_KEY;
 
 let BASE_URL = process.env.RAILWAY_STATIC_URL || process.env.BACKEND_URL || '';
 BASE_URL = BASE_URL.replace(/\/+$/, '').trim();
@@ -33,7 +32,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // ==================== کش ====================
 const cache = new NodeCache({ stdTTL: 3600 });
-const botSessions = new Map(); // shortId → { fullId, chatId, userInfo }
+const botSessions = new Map();
 const shortId = (id) => String(id).substring(0, 12);
 
 const getSession = (id) => {
@@ -105,12 +104,7 @@ app.post('/webhook', async (req, res) => {
   const { sessionId, userInfo, userMessage } = req.body.data;
   const short = shortId(sessionId);
 
-  // ذخیره اطلاعات کامل کاربر (نام، صفحه، آی‌پی)
-  botSessions.set(short, {
-    fullId: sessionId,
-    userInfo: userInfo || {},
-    chatId: null
-  });
+  botSessions.set(short, { fullId: sessionId, userInfo: userInfo || {}, chatId: null });
 
   const userName = userInfo?.name || 'ناشناس';
   const userPage = userInfo?.page ? userInfo.page : 'نامشخص';
@@ -136,7 +130,9 @@ app.post('/webhook', async (req, res) => {
   res.json({ success: true });
 });
 
-// وقتی هنوز اپراتور وصل نشده (AI جواب میده)
+// وقتی هنوز اپراتور وصل نشده (پیگیری سفارش از دیتابیس)
+const SHOP_API_URL = 'https://shikpooshaan.ir/ai-shop-api.php';
+
 app.post('/api/chat', async (req, res) => {
   const { message, sessionId } = req.body;
   if (!message || !sessionId) return res.status(400).json({ error: 'داده ناقص' });
@@ -149,25 +145,36 @@ app.post('/api/chat', async (req, res) => {
     return res.json({ operatorConnected: true });
   }
 
-  if (GROQ_API_KEY) {
-    try {
-      const aiRes = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
-        model: 'llama-3.3-70b-versatile',
-        messages: [
-          { role: 'system', content: 'فقط فارسی جواب بده. پشتیبان مودب باش.' },
-          { role: 'user', content: message }
-        ],
-        temperature: 0.7,
-        max_tokens: 800
-      }, { headers: { Authorization: `Bearer ${GROQ_API_KEY}` } });
+  const code = message.match(/\d{4,}/)?.[0];
 
-      const text = aiRes.data.choices[0].message.content.trim();
-      session.messages.push({ role: 'assistant', content: text });
-      return res.json({ success: true, message: text });
-    } catch {}
+  if (code) {
+    try {
+      const result = await axios.post(SHOP_API_URL, { action: 'track_order', tracking_code: code }, { timeout: 8000 });
+      const data = result.data;
+
+      if (data.found) {
+        const items = data.order.items.join('\n');
+        const total = Number(data.order.total).toLocaleString();
+
+        const reply = `سلام ${data.order.customer_name || 'عزیز'}!\n\n` +
+                      `سفارش با کد \`${code}\` پیدا شد!\n\n` +
+                      `وضعیت: **${data.order.status}**\n` +
+                      `تاریخ ثبت: ${data.order.date}\n` +
+                      `درگاه پرداخت: ${data.order.payment}\n` +
+                      `مبلغ: ${total} تومان\n` +
+                      `محصولات:\n${items}\n\n` +
+                      `به‌زودی براتون ارسال می‌شه 😊`;
+
+        return res.json({ success: true, message: reply });
+      } else {
+        return res.json({ success: true, message: `سفارش با کد \`${code}\` پیدا نشد.\nلطفاً کد رو دوباره چک کنید 🙏` });
+      }
+    } catch (err) {
+      return res.json({ success: true, message: 'الان نتونستم سفارش رو چک کنم 🙏\nچند لحظه دیگه امتحان کنید' });
+    }
   }
 
-  res.json({ success: false, requiresHuman: true });
+  return res.json({ success: true, message: 'سلام! 😊\n\nکد رهگیری بفرستید تا وضعیت سفارشتون رو بگم' });
 });
 
 // اتصال به اپراتور
@@ -183,7 +190,7 @@ app.post('/api/connect-human', async (req, res) => {
   res.json({ success: true, pending: true });
 });
 
-// ==================== سوکت – پیام کاربر → تلگرام (با صفحه و آی‌پی) ====================
+// ==================== سوکت – فایل و ویس + پیام کاربر → تلگرام ====================
 io.on('connection', (socket) => {
   socket.on('join-session', (sessionId) => {
     socket.join(sessionId);
@@ -211,6 +218,26 @@ io.on('connection', (socket) => {
 پیام:
 ${message}
       `.trim());
+    }
+  });
+
+  // ارسال فایل
+  socket.on('user-file', async ({ sessionId, fileName, fileBase64 }) => {
+    const short = shortId(sessionId);
+    const info = botSessions.get(short);
+    if (info?.chatId) {
+      const buffer = Buffer.from(fileBase64, 'base64');
+      await bot.telegram.sendDocument(info.chatId, { source: buffer, filename: fileName });
+    }
+  });
+
+  // ارسال ویس
+  socket.on('user-voice', async ({ sessionId, voiceBase64 }) => {
+    const short = shortId(sessionId);
+    const info = botSessions.get(short);
+    if (info?.chatId) {
+      const buffer = Buffer.from(voiceBase64, 'base64');
+      await bot.telegram.sendVoice(info.chatId, { source: buffer });
     }
   });
 });
