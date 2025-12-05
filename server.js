@@ -4,689 +4,1124 @@ const http = require('http');
 const socketIo = require('socket.io');
 const path = require('path');
 const helmet = require('helmet');
-const { Telegraf } = require('telegraf');
+const axios = require('axios');
 const mysql = require('mysql2/promise');
-const { v4: uuidv4 } = require('uuid');
 const NodeCache = require('node-cache');
+const { Telegraf } = require('telegraf');
+const natural = require('natural');
 require('dotenv').config();
 
 // ==================== تنظیمات ====================
 const PORT = process.env.PORT || 3000;
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const ADMIN_TELEGRAM_ID = process.env.ADMIN_TELEGRAM_ID;
-const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
+const ADMIN_TELEGRAM_ID = Number(process.env.ADMIN_TELEGRAM_ID);
+let BASE_URL = process.env.RAILWAY_STATIC_URL || process.env.BACKEND_URL || '';
+BASE_URL = BASE_URL.replace(/\/+$/, '').trim();
+if (!BASE_URL) BASE_URL = 'https://ai-chat-support-production.up.railway.app';
+if (!BASE_URL.startsWith('http')) BASE_URL = 'https://' + BASE_URL;
 
 // ==================== اتصال به دیتابیس ====================
-const pool = mysql.createPool({
-  host: process.env.DB_HOST || 'localhost',
-  user: process.env.DB_USER || 'apmsho_shikpooshan',
-  password: process.env.DB_PASSWORD || '5W2nn}@tkm8926G*',
-  database: process.env.DB_NAME || 'apmsho_shikpooshan',
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0,
-  charset: 'utf8mb4'
-});
+const dbConfig = {
+    host: process.env.DB_HOST || 'localhost',
+    user: process.env.DB_USER || 'apmsho_shikpooshan',
+    password: process.env.DB_PASSWORD || '5W2nn}@tkm8926G*',
+    database: process.env.DB_NAME || 'apmsho_shikpooshan',
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0
+};
+
+let dbPool;
+
+async function initializeDatabase() {
+    try {
+        dbPool = mysql.createPool(dbConfig);
+        const connection = await dbPool.getConnection();
+        console.log('✅ اتصال به دیتابیس موفقیت‌آمیز بود');
+        connection.release();
+        return true;
+    } catch (error) {
+        console.error('❌ خطا در اتصال به دیتابیس:', error.message);
+        return false;
+    }
+}
 
 // ==================== سرور ====================
 const app = express();
 const server = http.createServer(app);
-const io = socketIo(server, {
-  cors: { origin: "*", methods: ["GET", "POST"] }
+const io = socketIo(server, { 
+    cors: { 
+        origin: "*", 
+        methods: ["GET", "POST"],
+        credentials: true
+    } 
 });
 
-// ==================== کش ====================
-const cache = new NodeCache({ stdTTL: 600 });
-const operatorRequests = new Map();
-
-// ==================== میدل‌ورها ====================
-app.use(cors({ origin: "*" }));
+app.use(cors({ 
+    origin: ["https://shikpooshaan.ir", "http://localhost:3000", "*"],
+    credentials: true 
+}));
 app.use(express.json({ limit: '10mb' }));
-app.use(helmet({ contentSecurityPolicy: false }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(helmet({ 
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false
+}));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ==================== مدیریت نشست‌ها ====================
-const getSession = (sessionId) => {
-  let session = cache.get(sessionId);
-  if (!session) {
-    session = {
-      id: sessionId,
-      messages: [{
-        role: 'ai',
-        content: '👋 سلام! به پشتیبانی شیک‌پوشان خوش آمدید. 😊\n\n✨ **چطور می‌تونم کمکتون کنم؟**\n\n📦 **پیگیری سفارش:** کد رهگیری را وارد کنید\n👨‍💼 **صحبت با اپراتور:** کلمه "اپراتور" را بنویسید\n🛍️ **محصولات:** نام محصول را بگویید',
-        timestamp: new Date().toISOString()
-      }],
-      userInfo: {},
-      connectedToHuman: false,
-      createdAt: new Date().toISOString()
-    };
-    cache.set(sessionId, session);
-  }
-  return session;
+// ==================== کش و سشن‌ها ====================
+const cache = new NodeCache({ stdTTL: 600, checkperiod: 120 });
+const botSessions = new Map();
+const tokenizer = new natural.WordTokenizer();
+
+const getSession = (id) => {
+    let session = cache.get(id);
+    if (!session) {
+        session = { 
+            id, 
+            messages: [], 
+            userInfo: {}, 
+            connectedToHuman: false,
+            lastActivity: Date.now()
+        };
+        cache.set(id, session);
+    } else {
+        session.lastActivity = Date.now();
+    }
+    return session;
 };
 
-// ==================== تابع جستجوی سفارش ====================
-// ==================== تابع جستجوی پیشرفته سفارش ====================
-async function findOrderByTrackingCode(trackingCode) {
-  const cleanCode = trackingCode.trim();
-  
-  if (!cleanCode || cleanCode.length < 2) {
-    return { 
-      found: false, 
-      message: 'کد وارد شده کوتاه است'
-    };
-  }
-  
-  console.log(`🔍 جستجوی پیشرفته سفارش با: "${cleanCode}"`);
-  
-  try {
-    // ===== روش 1: جستجو در ID سفارش =====
-    if (/^\d+$/.test(cleanCode)) {
-      const [ordersById] = await pool.execute(`
-        SELECT 
-          ID as order_id,
-          post_date,
-          post_status,
-          post_title
-        FROM wp_posts 
-        WHERE ID = ? 
-          AND post_type = 'shop_order'
-          AND post_status != 'trash'
-        LIMIT 1
-      `, [cleanCode]);
-      
-      if (ordersById.length > 0) {
-        console.log(`✅ سفارش با ID ${cleanCode} پیدا شد`);
-        return await getFullOrderDetails(ordersById[0].order_id, cleanCode);
-      }
-    }
+const cleanupSessions = () => {
+    const now = Date.now();
+    const expired = [];
     
-    // ===== روش 2: جستجو در post_title (شماره سفارش) =====
-    // حالت‌های مختلف جستجو
-    const searchPatterns = [
-      `%${cleanCode}%`,                    // 7123
-      `%#${cleanCode}%`,                   // #7123
-      `%order ${cleanCode}%`,              // Order 7123
-      `%سفارش ${cleanCode}%`,              // سفارش 7123
-      `%${cleanCode.padStart(5, '0')}%`,   // 07123
-      `%${cleanCode.padStart(6, '0')}%`    // 007123
-    ];
-    
-    for (const pattern of searchPatterns) {
-      const [ordersByTitle] = await pool.execute(`
-        SELECT 
-          ID as order_id,
-          post_date,
-          post_status,
-          post_title
-        FROM wp_posts 
-        WHERE post_type = 'shop_order'
-          AND post_status != 'trash'
-          AND post_title LIKE ?
-        ORDER BY ID DESC
-        LIMIT 1
-      `, [pattern]);
-      
-      if (ordersByTitle.length > 0) {
-        console.log(`✅ سفارش با الگوی "${pattern}" پیدا شد: ${ordersByTitle[0].order_id}`);
-        return await getFullOrderDetails(ordersByTitle[0].order_id, cleanCode);
-      }
-    }
-    
-    // ===== روش 3: جستجو در متادیتاها =====
-    // کد رهگیری در فیلدهای مختلف
-    const metaKeys = [
-      '_tracking_number',
-      '_shipping_tracking_number',
-      '_billing_phone',
-      '_billing_email',
-      '_order_key',
-      '_transaction_id'
-    ];
-    
-    for (const metaKey of metaKeys) {
-      const [ordersByMeta] = await pool.execute(`
-        SELECT 
-          p.ID as order_id,
-          p.post_date
-        FROM wp_posts p
-        INNER JOIN wp_postmeta pm ON pm.post_id = p.ID
-        WHERE p.post_type = 'shop_order'
-          AND p.post_status != 'trash'
-          AND pm.meta_key = ?
-          AND pm.meta_value LIKE ?
-        ORDER BY p.post_date DESC
-        LIMIT 1
-      `, [metaKey, `%${cleanCode}%`]);
-      
-      if (ordersByMeta.length > 0) {
-        console.log(`✅ سفارش در متادیتای ${metaKey} پیدا شد`);
-        return await getFullOrderDetails(ordersByMeta[0].order_id, cleanCode);
-      }
-    }
-    
-    // ===== روش 4: جستجو در همه متادیتاها =====
-    const [ordersInAnyMeta] = await pool.execute(`
-      SELECT DISTINCT
-        p.ID as order_id,
-        p.post_date
-      FROM wp_posts p
-      INNER JOIN wp_postmeta pm ON pm.post_id = p.ID
-      WHERE p.post_type = 'shop_order'
-        AND p.post_status != 'trash'
-        AND pm.meta_value LIKE ?
-      ORDER BY p.post_date DESC
-      LIMIT 1
-    `, [`%${cleanCode}%`]);
-    
-    if (ordersInAnyMeta.length > 0) {
-      console.log(`✅ سفارش در یکی از متادیتاها پیدا شد`);
-      return await getFullOrderDetails(ordersInAnyMeta[0].order_id, cleanCode);
-    }
-    
-    // ===== روش 5: اگر کاربر شماره تلفن وارد کرده =====
-    if (cleanCode.length >= 10 && /^[0-9]+$/.test(cleanCode)) {
-      const [ordersByPhone] = await pool.execute(`
-        SELECT 
-          p.ID as order_id,
-          p.post_date
-        FROM wp_posts p
-        INNER JOIN wp_postmeta pm ON pm.post_id = p.ID
-        WHERE p.post_type = 'shop_order'
-          AND p.post_status != 'trash'
-          AND pm.meta_key = '_billing_phone'
-          AND REPLACE(pm.meta_value, ' ', '') LIKE ?
-        ORDER BY p.post_date DESC
-        LIMIT 1
-      `, [`%${cleanCode.replace(/\D/g, '')}%`]);
-      
-      if (ordersByPhone.length > 0) {
-        console.log(`✅ سفارش با شماره تلفن پیدا شد`);
-        return await getFullOrderDetails(ordersByPhone[0].order_id, cleanCode);
-      }
-    }
-    
-    // ===== سفارش پیدا نشد - اطلاعات مفید برگردان =====
-    console.log(`❌ سفارشی با "${cleanCode}" پیدا نشد`);
-    
-    // اطلاعاتی برای کمک به کاربر
-    const [suggestions] = await pool.execute(`
-      SELECT 
-        ID as order_id,
-        post_title as order_number,
-        post_date
-      FROM wp_posts 
-      WHERE post_type = 'shop_order'
-        AND post_status != 'trash'
-      ORDER BY post_date DESC
-      LIMIT 3
-    `);
-    
-    const sampleOrders = suggestions.map(order => 
-      `• شماره سفارش: ${order.order_number} (ID: ${order.order_id})`
-    ).join('\n');
-    
-    return {
-      found: false,
-      message: `سفارشی با کد «${cleanCode}» پیدا نشد.`,
-      suggestions: [
-        'کد را دقیق وارد کنید',
-        'شماره سفارش ممکن است متفاوت باشد',
-        'شماره تلفن خود را امتحان کنید'
-      ],
-      sample_orders: sampleOrders,
-      tip: 'آیا شماره سفارش شما شبیه این‌ها است؟'
-    };
-    
-  } catch (error) {
-    console.error('❌ خطا در جستجوی سفارش:', error);
-    return {
-      found: false,
-      message: 'خطا در سرویس پیگیری',
-      error: error.message
-    };
-  }
-}
-
-// ==================== تابع دریافت کامل اطلاعات سفارش ====================
-async function getFullOrderDetails(orderId, trackingCode) {
-  try {
-    console.log(`📊 دریافت اطلاعات سفارش ${orderId}...`);
-    
-    // ۱. اطلاعات اصلی سفارش
-    const [orderBasic] = await pool.execute(`
-      SELECT 
-        ID as order_id,
-        post_date,
-        post_status,
-        post_title
-      FROM wp_posts 
-      WHERE ID = ?
-    `, [orderId]);
-    
-    if (orderBasic.length === 0) {
-      return { found: false, message: 'سفارش پیدا نشد' };
-    }
-    
-    const order = orderBasic[0];
-    
-    // ۲. تمام متادیتاهای سفارش
-    const [allMeta] = await pool.execute(`
-      SELECT meta_key, meta_value
-      FROM wp_postmeta
-      WHERE post_id = ?
-    `, [orderId]);
-    
-    const meta = {};
-    allMeta.forEach(row => {
-      meta[row.meta_key] = row.meta_value;
-    });
-    
-    // ۳. محصولات سفارش
-    let products = ['محصولات سفارش'];
-    try {
-      const [items] = await pool.execute(`
-        SELECT order_item_name
-        FROM wp_woocommerce_order_items
-        WHERE order_id = ? AND order_item_type = 'line_item'
-      `, [orderId]);
-      
-      if (items.length > 0) {
-        products = items.map(item => item.order_item_name);
-      }
-    } catch (error) {
-      console.log('⚠️ خطا در دریافت محصولات:', error.message);
-    }
-    
-    // ۴. اطلاعات مشتری
-    const customerName = `${meta['_billing_first_name'] || ''} ${meta['_billing_last_name'] || ''}`.trim();
-    const customerPhone = meta['_billing_phone'] || 'ندارد';
-    const customerEmail = meta['_billing_email'] || 'ندارد';
-    
-    // ۵. اطلاعات پرداخت و ارسال
-    const totalAmount = meta['_order_total'] ? parseInt(meta['_order_total']).toLocaleString('fa-IR') : '0';
-    const paymentMethod = meta['_payment_method_title'] || 'آنلاین';
-    const shippingMethod = meta['_shipping_method'] || 'پست پیشتاز';
-    
-    // ۶. کد رهگیری واقعی
-    const realTrackingCode = meta['_tracking_number'] || 
-                            meta['_shipping_tracking_number'] || 
-                            trackingCode;
-    
-    // ۷. وضعیت سفارش به فارسی
-    const statusMap = {
-      'wc-pending': '⏳ در انتظار پرداخت',
-      'wc-processing': '🔄 در حال پردازش',
-      'wc-on-hold': '⏸️ در انتظار بررسی',
-      'wc-completed': '✅ تکمیل شده',
-      'wc-cancelled': '❌ لغو شده',
-      'wc-refunded': '↩️ مرجوع شده',
-      'pending': '⏳ در انتظار پرداخت',
-      'processing': '🔄 در حال پردازش',
-      'on-hold': '⏸️ در انتظار بررسی',
-      'completed': '✅ تکمیل شده',
-      'cancelled': '❌ لغو شده',
-      'refunded': '↩️ مرجوع شده'
-    };
-    
-    const status = statusMap[meta['_order_status']] || meta['_order_status'] || 'نامشخص';
-    
-    // ۸. تاریخ سفارش
-    const orderDate = new Date(order.post_date).toLocaleDateString('fa-IR', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-    
-    return {
-      found: true,
-      order: {
-        id: order.order_id,
-        order_number: order.post_title || `سفارش #${order.order_id}`,
-        tracking_code: realTrackingCode,
-        date: orderDate,
-        status: status,
-        total: totalAmount,
-        customer_name: customerName || 'مشتری ناشناس',
-        customer_phone: customerPhone,
-        customer_email: customerEmail,
-        customer_ip: meta['_customer_ip_address'] || 'ندارد',
-        payment_method: paymentMethod,
-        shipping_method: shippingMethod,
-        shipping_address: `${meta['_shipping_address_1'] || ''} ${meta['_shipping_city'] || ''}`.trim() || 'ندارد',
-        billing_address: `${meta['_billing_address_1'] || ''} ${meta['_billing_city'] || ''}`.trim() || 'ندارد',
-        products: products.slice(0, 10),
-        notes: meta['_order_customer_note'] || 'ندارد',
-        coupon_codes: meta['_cart_discount'] ? meta['_cart_discount'] : 'ندارد'
-      }
-    };
-    
-  } catch (error) {
-    console.error('❌ خطا در دریافت جزئیات سفارش:', error);
-    return {
-      found: false,
-      message: 'خطا در دریافت اطلاعات سفارش'
-    };
-  }
-}
-
-// ==================== پردازشگر پیام ====================
-async function processMessage(message, sessionId) {
-  const cleanMsg = message.trim().toLowerCase();
-  
-  // تشخیص کد رهگیری
-  const codeMatch = cleanMsg.match(/\b\d{3,}\b/);
-  if (codeMatch) {
-    const trackingCode = codeMatch[0];
-    const result = await findOrderByTrackingCode(trackingCode);
-    
-    if (result.found) {
-      const order = result.order;
-      const productsText = order.products.map((p, i) => `${i + 1}. ${p}`).join('\n');
-      
-      return {
-        type: 'order_found',
-        text: `🎉 **✅ سفارش شما پیدا شد!**\n\n` +
-              `📦 **کد رهگیری:** ${order.tracking_code}\n` +
-              `📋 **شماره سفارش:** ${order.order_number}\n` +
-              `👤 **مشتری:** ${order.customer_name}\n` +
-              `📅 **تاریخ سفارش:** ${order.date}\n` +
-              `📞 **تلفن:** ${order.customer_phone}\n` +
-              `📧 **ایمیل:** ${order.customer_email}\n` +
-              `🌐 **IP مشتری:** ${order.customer_ip}\n` +
-              `📊 **وضعیت:** ${order.status}\n` +
-              `💳 **روش پرداخت:** ${order.payment_method}\n` +
-              `🚚 **روش ارسال:** ${order.shipping_method}\n` +
-              `💰 **مبلغ کل:** ${order.total} تومان\n\n` +
-              `🛍️ **محصولات سفارش:**\n${productsText}\n\n` +
-              `📍 **آدرس ارسال:** ${order.shipping_address}\n` +
-              `🏠 **آدرس صورتحساب:** ${order.billing_address}\n\n` +
-              (order.notes !== 'ندارد' ? `📝 **یادداشت شما:** ${order.notes}\n\n` : '') +
-              `⏳ *سفارش شما در حال پردازش است.*\n\n` +
-              `برای پیگیری بیشتر در خدمتم! 😊`
-      };
-    } else {
-      return {
-        type: 'order_not_found',
-        text: `🔍 **جستجوی کد «${trackingCode}»**\n\n` +
-              `❌ متأسفانه **سفارشی با این کد پیدا نشد**.\n\n` +
-              `📋 **لطفاً بررسی کنید:**\n` +
-              `• کد رهگیری را دقیق وارد کرده باشید\n` +
-              `• ممکن است شماره سفارش باشد\n` +
-              `• سفارش ممکن است هنوز ثبت نشده باشد\n\n` +
-              `💡 **راه‌های دیگر:**\n` +
-              `👨‍💼 **با زدن دکمه «اتصال به اپراتور»**\n` +
-              `یا شماره سفارش خود را امتحان کنید\n\n` +
-              `آیا می‌خواهید با اپراتور صحبت کنید؟`
-      };
-    }
-  }
-  
-  // درخواست اپراتور
-  if (cleanMsg.includes('اپراتور') || cleanMsg.includes('انسان')) {
-    return {
-      type: 'operator_request',
-      text: `👨‍💼 **درخواست اتصال به اپراتور**\n\n` +
-            `✅ درخواست شما ثبت شد.\n` +
-            `⏳ لطفاً منتظر بمانید...\n\n` +
-            `📞 زمان انتظار: ۲-۵ دقیقه\n` +
-            `💬 اپراتور از همین چت پاسخ می‌دهد`
-    };
-  }
-  
-  // سلام
-  if (cleanMsg.includes('سلام')) {
-    return {
-      type: 'greeting',
-      text: `👋 سلام عزیزم! 😊\nبه **پشتیبانی شیک‌پوشان** خوش آمدید.\n\n` +
-            `✨ **چطور می‌تونم کمکتون کنم؟**\n\n` +
-            `📦 **پیگیری سفارش:** کد رهگیری را وارد کنید\n` +
-            `👨‍💼 **صحبت با اپراتور:** کلمه "اپراتور" را بنویسید\n` +
-            `🛍️ **محصولات:** نام محصول را بگویید\n\n` +
-            `لطفاً نیاز خود را انتخاب کنید...`
-    };
-  }
-  
-  // پاسخ پیش‌فرض
-  return {
-    type: 'general',
-    text: `🤔 **لطفاً مشخص کنید:**\n\n` +
-          `📦 **پیگیری سفارش:** کد رهگیری یا شماره سفارش\n` +
-          `👨‍💼 **پشتیبانی:** کلمه "اپراتور"\n` +
-          `🛍️ **محصولات:** نام محصول\n\n` +
-          `چگونه می‌توانم کمک کنم؟ 😊`
-  };
-}
-
-// ==================== تلگرام ====================
-const bot = new Telegraf(TELEGRAM_BOT_TOKEN);
-
-bot.action(/accept_(.+)/, async (ctx) => {
-  const sessionId = ctx.match[1];
-  const session = getSession(sessionId);
-  session.connectedToHuman = true;
-  cache.set(sessionId, session);
-  
-  await ctx.answerCbQuery('✅ پذیرفته شد');
-  await ctx.editMessageText(`✅ اپراتور متصل شد\nکد: ${sessionId}`);
-  
-  io.to(sessionId).emit('operator-connected', {
-    message: '🎉 اپراتور متصل شد! لطفاً سوال خود را بپرسید.'
-  });
-});
-
-bot.on('text', async (ctx) => {
-  if (ctx.message.text.startsWith('/')) return;
-  
-  const session = [...cache.keys()]
-    .map(key => ({ key, session: cache.get(key) }))
-    .find(s => s.session.connectedToHuman);
-  
-  if (session) {
-    io.to(session.key).emit('operator-message', {
-      message: ctx.message.text,
-      operator: ctx.from.first_name || 'اپراتور'
-    });
-    await ctx.reply('✅ ارسال شد');
-  }
-});
-
-// ==================== API ها ====================
-
-// API چت
-app.post('/api/chat', async (req, res) => {
-  try {
-    const { message, sessionId: inputSessionId } = req.body;
-    
-    if (!message) {
-      return res.json({ error: 'پیام خالی است' });
-    }
-    
-    const sessionId = inputSessionId || uuidv4();
-    const session = getSession(sessionId);
-    
-    session.messages.push({ role: 'user', content: message });
-    cache.set(sessionId, session);
-    
-    // بررسی اتصال اپراتور
-    if (session.connectedToHuman) {
-      return res.json({ 
-        operatorConnected: true,
-        message: 'پیام به اپراتور ارسال شد'
-      });
-    }
-    
-    const response = await processMessage(message, sessionId);
-    session.messages.push({ role: 'assistant', content: response.text });
-    
-    res.json({
-      success: true,
-      message: response.text,
-      sessionId,
-      type: response.type
-    });
-    
-  } catch (error) {
-    console.error('API Chat Error:', error);
-    res.json({ error: 'خطا در پردازش پیام' });
-  }
-});
-
-// API درخواست اپراتور
-app.post('/api/request-operator', async (req, res) => {
-  try {
-    const { sessionId, reason = 'درخواست اپراتور' } = req.body;
-    
-    if (!sessionId) {
-      return res.json({ error: 'شناسه جلسه لازم است' });
-    }
-    
-    const session = getSession(sessionId);
-    
-    // ارسال به تلگرام
-    await bot.telegram.sendMessage(
-      ADMIN_TELEGRAM_ID,
-      `🔔 درخواست پشتیبانی\n\n` +
-      `کد: ${sessionId}\n` +
-      `دلیل: ${reason}\n` +
-      `زمان: ${new Date().toLocaleTimeString('fa-IR')}`,
-      {
-        reply_markup: {
-          inline_keyboard: [[
-            { text: '✅ پذیرش', callback_data: `accept_${sessionId}` },
-            { text: '❌ رد', callback_data: `reject_${sessionId}` }
-          ]]
+    cache.keys().forEach(key => {
+        const session = cache.get(key);
+        if (session && (now - session.lastActivity) > 1800000) { // 30 دقیقه
+            expired.push(key);
         }
-      }
+    });
+    
+    expired.forEach(key => cache.del(key));
+    if (expired.length > 0) {
+        console.log(`🧹 ${expired.length} سشن منقضی حذف شد`);
+    }
+};
+
+setInterval(cleanupSessions, 300000); // هر 5 دقیقه
+
+// ==================== هوش مصنوعی تحلیل پیام ====================
+function analyzeMessage(message) {
+    const lowerMessage = message.toLowerCase().trim();
+    
+    // تشخیص کد رهگیری (4 تا 20 رقمی)
+    const trackingMatch = lowerMessage.match(/\b\d{4,20}\b/);
+    if (trackingMatch) {
+        return { type: 'tracking', code: trackingMatch[0] };
+    }
+    
+    // تشخیص درخواست محصول
+    const productKeywords = ['لباس', 'پیراهن', 'شلوار', 'کت', 'دامن', 'تیشرت', 'هودی', 'سوئیشرت', 'کفش', 'کالا', 'محصول', 'خرید', 'قیمت', 'موجودی'];
+    const colorKeywords = ['قرمز', 'آبی', 'سبز', 'مشکی', 'سفید', 'خاکستری', 'بنفش', 'صورتی', 'نارنجی', 'زرد', 'قهوه‌ای', 'بژ', 'طلایی', 'نقره‌ای'];
+    const sizeKeywords = ['اسمال', 'مدیوم', 'لارج', 'اکسترا لارج', 'XL', 'L', 'M', 'S', 'XS', 'XXL', 'سایز', 'اندازه'];
+    
+    const words = tokenizer.tokenize(lowerMessage);
+    const hasProduct = productKeywords.some(keyword => 
+        words.some(word => word.includes(keyword))
     );
     
-    res.json({
-      success: true,
-      message: 'درخواست ارسال شد',
-      pending: true
-    });
-    
-  } catch (error) {
-    console.error('API Operator Error:', error);
-    res.json({ error: 'خطا در ارسال درخواست' });
-  }
-});
-
-// API پیگیری سفارش
-app.post('/api/track', async (req, res) => {
-  try {
-    const { code } = req.body;
-    
-    if (!code) {
-      return res.json({ error: 'کد لازم است' });
+    if (hasProduct) {
+        const colors = colorKeywords.filter(color => 
+            words.some(word => word.includes(color.toLowerCase()))
+        );
+        const sizes = sizeKeywords.filter(size => 
+            words.some(word => word.includes(size.toLowerCase()))
+        );
+        
+        return { 
+            type: 'product_request', 
+            colors: colors.length > 0 ? colors : null,
+            sizes: sizes.length > 0 ? sizes : null,
+            keywords: words.filter(word => word.length > 2)
+        };
     }
     
-    const result = await findOrderByTrackingCode(code);
-    res.json(result);
+    // تشخیص سلام
+    if (/^(سلام|درود|هلو|هی|سلامتی|صبح بخیر|عصر بخیر)/.test(lowerMessage)) {
+        return { type: 'greeting' };
+    }
     
-  } catch (error) {
-    res.json({ error: 'خطای سرور' });
-  }
-});
-
-// API وضعیت
-app.get('/api/status', (req, res) => {
-  res.json({
-    success: true,
-    status: 'online',
-    sessions: cache.keys().length,
-    version: '1.0.0'
-  });
-});
-
-// ==================== صفحه تست ====================
-app.get('/test', (req, res) => {
-  res.send(`
-    <html dir="rtl">
-    <style>
-      body { font-family: Tahoma; padding: 20px; }
-      input, button { padding: 10px; margin: 5px; }
-      #result { margin-top: 20px; padding: 15px; background: #f0f0f0; }
-    </style>
-    <h2>🧪 تست سیستم پشتیبانی</h2>
-    <input id="message" placeholder="پیام خود را بنویسید">
-    <button onclick="sendMessage()">💬 ارسال</button>
-    <button onclick="trackOrder()">📦 پیگیری سفارش</button>
-    <button onclick="requestOperator()">👨‍💼 اپراتور</button>
-    <div id="result"></div>
+    // تشخیص تشکر
+    if (/^(مرسی|ممنون|متشکرم|دستت درد نکنه|تشکر)/.test(lowerMessage)) {
+        return { type: 'thanks' };
+    }
     
-    <script>
-      let sessionId = 'test_' + Date.now();
-      const API_URL = window.location.origin;
-      
-      function showResult(text) {
-        document.getElementById('result').innerText = text;
-      }
-      
-      async function sendMessage() {
-        const message = document.getElementById('message').value;
-        const res = await fetch(API_URL + '/api/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message, sessionId })
-        });
-        const data = await res.json();
-        showResult(data.operatorConnected ? 'اپراتور متصل شد' : data.message);
-      }
-      
-      async function trackOrder() {
-        const code = prompt('کد رهگیری:');
-        if (!code) return;
-        
-        const res = await fetch(API_URL + '/api/track', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ code })
-        });
-        const data = await res.json();
-        
-        if (data.found) {
-          showResult(\`✅ سفارش پیدا شد!\\n\\nکد: \${data.order.tracking_code}\\nمشتری: \${data.order.customer_name}\\nوضعیت: \${data.order.status}\\nمبلغ: \${data.order.total}\`);
-        } else {
-          showResult(\`❌ \${data.message}\`);
+    // تشخیص مشکل
+    if (/^(مشکل|خطا|ایراد|اشکال|خراب|کار نمیکنه)/.test(lowerMessage)) {
+        return { type: 'problem' };
+    }
+    
+    return { type: 'general' };
+}
+
+// ==================== سیستم پیگیری سفارش از دیتابیس ====================
+async function trackOrderFromDatabase(trackingCode) {
+    try {
+        if (!dbPool) {
+            await initializeDatabase();
         }
-      }
-      
-      async function requestOperator() {
-        const res = await fetch(API_URL + '/api/request-operator', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sessionId })
+        
+        // جستجو در جدول پست‌ها برای سفارش
+        const [orderRows] = await dbPool.execute(`
+            SELECT 
+                p.ID as order_id,
+                p.post_title as order_title,
+                p.post_date as order_date,
+                p.post_status as order_status,
+                pm.meta_value as order_total,
+                pm2.meta_value as payment_method,
+                pm3.meta_value as customer_name,
+                pm4.meta_value as tracking_number
+            FROM wp_posts p
+            LEFT JOIN wp_postmeta pm ON p.ID = pm.post_id AND pm.meta_key = '_order_total'
+            LEFT JOIN wp_postmeta pm2 ON p.ID = pm2.post_id AND pm2.meta_key = '_payment_method_title'
+            LEFT JOIN wp_postmeta pm3 ON p.ID = pm3.post_id AND pm3.meta_key = '_billing_first_name'
+            LEFT JOIN wp_postmeta pm4 ON p.ID = pm4.post_id AND pm4.meta_key = '_shipping_tracking_number'
+            WHERE p.post_type = 'shop_order'
+            AND (pm4.meta_value = ? OR p.ID = ?)
+            LIMIT 1
+        `, [trackingCode, parseInt(trackingCode) || 0]);
+        
+        if (orderRows.length === 0) {
+            // جستجوی دیگر در متاهای سفارش
+            const [metaRows] = await dbPool.execute(`
+                SELECT 
+                    p.ID as order_id,
+                    p.post_title as order_title,
+                    p.post_date as order_date,
+                    p.post_status as order_status
+                FROM wp_posts p
+                INNER JOIN wp_postmeta pm ON p.ID = pm.post_id
+                WHERE p.post_type = 'shop_order'
+                AND pm.meta_key LIKE '%tracking%'
+                AND pm.meta_value LIKE ?
+                LIMIT 1
+            `, [`%${trackingCode}%`]);
+            
+            if (metaRows.length === 0) {
+                return { found: false, message: 'سفارشی با این کد رهگیری یافت نشد.' };
+            }
+            
+            const order = metaRows[0];
+            return await getOrderDetails(order.order_id);
+        }
+        
+        const order = orderRows[0];
+        return await getOrderDetails(order.order_id);
+        
+    } catch (error) {
+        console.error('❌ خطا در پیگیری سفارش:', error);
+        return { 
+            found: false, 
+            message: 'خطا در اتصال به دیتابیس. لطفاً دوباره تلاش کنید.' 
+        };
+    }
+}
+
+async function getOrderDetails(orderId) {
+    try {
+        // اطلاعات اصلی سفارش
+        const [orderInfo] = await dbPool.execute(`
+            SELECT 
+                p.ID,
+                p.post_title,
+                p.post_date,
+                p.post_status,
+                MAX(CASE WHEN pm.meta_key = '_order_total' THEN pm.meta_value END) as total,
+                MAX(CASE WHEN pm.meta_key = '_payment_method_title' THEN pm.meta_value END) as payment_method,
+                MAX(CASE WHEN pm.meta_key = '_billing_first_name' THEN pm.meta_value END) as first_name,
+                MAX(CASE WHEN pm.meta_key = '_billing_last_name' THEN pm.meta_value END) as last_name,
+                MAX(CASE WHEN pm.meta_key = '_billing_phone' THEN pm.meta_value END) as phone,
+                MAX(CASE WHEN pm.meta_key = '_billing_email' THEN pm.meta_value END) as email,
+                MAX(CASE WHEN pm.meta_key = '_shipping_tracking_number' THEN pm.meta_value END) as tracking_number
+            FROM wp_posts p
+            LEFT JOIN wp_postmeta pm ON p.ID = pm.post_id
+            WHERE p.ID = ?
+            GROUP BY p.ID
+        `, [orderId]);
+        
+        if (orderInfo.length === 0) {
+            return { found: false };
+        }
+        
+        const order = orderInfo[0];
+        
+        // دریافت آیتم‌های سفارش
+        const [orderItems] = await dbPool.execute(`
+            SELECT 
+                oi.order_item_name as product_name,
+                oim.meta_value as quantity
+            FROM wp_woocommerce_order_items oi
+            LEFT JOIN wp_woocommerce_order_itemmeta oim ON oi.order_item_id = oim.order_item_id
+            WHERE oi.order_id = ?
+            AND oi.order_item_type = 'line_item'
+            AND oim.meta_key = '_qty'
+        `, [orderId]);
+        
+        // وضعیت سفارش به فارسی
+        const statusMap = {
+            'wc-pending': 'در انتظار پرداخت',
+            'wc-processing': 'در حال پردازش',
+            'wc-on-hold': 'در انتظار',
+            'wc-completed': 'تکمیل شده',
+            'wc-cancelled': 'لغو شده',
+            'wc-refunded': 'عودت داده شده',
+            'wc-failed': 'ناموفق',
+            'pending': 'در انتظار پرداخت',
+            'processing': 'در حال پردازش',
+            'completed': 'تکمیل شده'
+        };
+        
+        const persianStatus = statusMap[order.post_status] || order.post_status;
+        
+        return {
+            found: true,
+            order: {
+                id: order.ID,
+                number: order.ID,
+                tracking_code: order.tracking_number || 'ثبت نشده',
+                customer_name: `${order.first_name || ''} ${order.last_name || ''}`.trim() || 'مشتری',
+                date: new Date(order.post_date).toLocaleDateString('fa-IR'),
+                status: persianStatus,
+                total: parseFloat(order.total || 0).toLocaleString('fa-IR'),
+                payment_method: order.payment_method || 'نامشخص',
+                phone: order.phone || 'ثبت نشده',
+                email: order.email || 'ثبت نشده',
+                items: orderItems.map(item => `${item.quantity} × ${item.product_name}`)
+            }
+        };
+        
+    } catch (error) {
+        console.error('❌ خطا در دریافت جزئیات سفارش:', error);
+        return { found: false };
+    }
+}
+
+// ==================== سیستم پیشنهاد محصول از دیتابیس ====================
+async function suggestProductsFromDatabase(analysis) {
+    try {
+        if (!dbPool) {
+            await initializeDatabase();
+        }
+        
+        let query = `
+            SELECT 
+                p.ID,
+                p.post_title,
+                p.post_content,
+                pm1.meta_value as regular_price,
+                pm2.meta_value as sale_price,
+                pm3.meta_value as product_image,
+                t.name as product_type
+            FROM wp_posts p
+            LEFT JOIN wp_postmeta pm1 ON p.ID = pm1.post_id AND pm1.meta_key = '_regular_price'
+            LEFT JOIN wp_postmeta pm2 ON p.ID = pm2.post_id AND pm2.meta_key = '_sale_price'
+            LEFT JOIN wp_postmeta pm3 ON p.ID = pm3.post_id AND pm3.meta_key = '_thumbnail_id'
+            LEFT JOIN wp_terms t ON (
+                SELECT tr.term_taxonomy_id 
+                FROM wp_term_relationships tr 
+                INNER JOIN wp_term_taxonomy tx ON tr.term_taxonomy_id = tx.term_taxonomy_id 
+                WHERE tr.object_id = p.ID AND tx.taxonomy = 'product_type' 
+                LIMIT 1
+            ) = t.term_id
+            WHERE p.post_type = 'product'
+            AND p.post_status = 'publish'
+            AND (
+        `;
+        
+        const conditions = [];
+        const params = [];
+        
+        // جستجو بر اساس رنگ
+        if (analysis.colors && analysis.colors.length > 0) {
+            analysis.colors.forEach(color => {
+                conditions.push(`(p.post_title LIKE ? OR p.post_content LIKE ?)`);
+                params.push(`%${color}%`, `%${color}%`);
+            });
+        }
+        
+        // جستجو بر اساس سایز
+        if (analysis.sizes && analysis.sizes.length > 0) {
+            analysis.sizes.forEach(size => {
+                conditions.push(`(p.post_title LIKE ? OR p.post_content LIKE ?)`);
+                params.push(`%${size}%`, `%${size}%`);
+            });
+        }
+        
+        // جستجو بر اساس کلمات کلیدی
+        if (analysis.keywords && analysis.keywords.length > 0) {
+            analysis.keywords.forEach(keyword => {
+                if (keyword.length > 2) {
+                    conditions.push(`(p.post_title LIKE ? OR p.post_content LIKE ?)`);
+                    params.push(`%${keyword}%`, `%${keyword}%`);
+                }
+            });
+        }
+        
+        // اگر هیچ شرطی نداشتیم، محصولات پرفروش را برگردان
+        if (conditions.length === 0) {
+            query = `
+                SELECT 
+                    p.ID,
+                    p.post_title,
+                    p.post_content,
+                    pm1.meta_value as regular_price,
+                    pm2.meta_value as sale_price,
+                    pm3.meta_value as product_image,
+                    'پرفروش' as product_type
+                FROM wp_posts p
+                LEFT JOIN wp_postmeta pm1 ON p.ID = pm1.post_id AND pm1.meta_key = '_regular_price'
+                LEFT JOIN wp_postmeta pm2 ON p.ID = pm2.post_id AND pm2.meta_key = '_sale_price'
+                LEFT JOIN wp_postmeta pm3 ON p.ID = pm3.post_id AND pm3.meta_key = '_thumbnail_id'
+                WHERE p.post_type = 'product'
+                AND p.post_status = 'publish'
+                ORDER BY p.post_date DESC
+                LIMIT 5
+            `;
+        } else {
+            query += conditions.join(' OR ');
+            query += `) ORDER BY p.post_date DESC LIMIT 5`;
+        }
+        
+        const [products] = conditions.length > 0 
+            ? await dbPool.execute(query, params)
+            : await dbPool.execute(query);
+        
+        if (products.length === 0) {
+            return [];
+        }
+        
+        // دریافت تصاویر محصولات
+        const enrichedProducts = await Promise.all(
+            products.map(async (product) => {
+                if (product.product_image) {
+                    const [imageRows] = await dbPool.execute(`
+                        SELECT meta_value as image_url 
+                        FROM wp_postmeta 
+                        WHERE post_id = ? 
+                        AND meta_key = '_wp_attached_file'
+                        LIMIT 1
+                    `, [product.product_image]);
+                    
+                    if (imageRows.length > 0) {
+                        product.image_url = `https://shikpooshaan.ir/wp-content/uploads/${imageRows[0].image_url}`;
+                    }
+                }
+                
+                // قیمت نهایی
+                const price = product.sale_price && parseFloat(product.sale_price) > 0 
+                    ? parseFloat(product.sale_price)
+                    : parseFloat(product.regular_price || 0);
+                
+                product.final_price = price.toLocaleString('fa-IR');
+                product.has_discount = product.sale_price && parseFloat(product.sale_price) > 0;
+                
+                return product;
+            })
+        );
+        
+        return enrichedProducts;
+        
+    } catch (error) {
+        console.error('❌ خطا در جستجوی محصولات:', error);
+        return [];
+    }
+}
+
+// ==================== پاسخ هوشمند فارسی ====================
+function generateAIResponse(analysis, context = {}) {
+    switch (analysis.type) {
+        case 'tracking':
+            return `در حال بررسی سفارش با کد ${analysis.code}... 🔍\nلطفاً کمی صبر کنید تا اطلاعات سفارش را از سیستم دریافت کنم.`;
+        
+        case 'product_request':
+            let response = 'در حال جستجوی محصولات مناسب برای شما... 🛍️\n';
+            if (analysis.colors) {
+                response += `رنگ‌های درخواستی: ${analysis.colors.join('، ')}\n`;
+            }
+            if (analysis.sizes) {
+                response += `سایزهای درخواستی: ${analysis.sizes.join('، ')}\n`;
+            }
+            response += 'لطفاً چند لحظه صبر کنید...';
+            return response;
+        
+        case 'greeting':
+            return 'سلام! 😊\nبه پشتیبانی هوشمند شیک‌پوشان خوش آمدید!\nچگونه می‌توانم کمکتان کنم؟\n• می‌توانید کد رهگیری سفارش خود را وارد کنید\n• یا در مورد محصولات سوال بپرسید\n• یا برای صحبت با اپراتور انسانی، تایپ کنید: "اپراتور"';
+        
+        case 'thanks':
+            return 'خوشحالم که توانستم کمک کنم! 🌟\nاگر سوال دیگری دارید، در خدمت شما هستم.\nروز خوبی داشته باشید!';
+        
+        case 'problem':
+            return 'ببخشید که با مشکل مواجه شدید! 😔\nلطفاً مشکل را با جزییات بیشتری توضیح دهید تا بتوانم بهتر راهنماییتان کنم.\nیا اگر ترجیح می‌دهید با اپراتور صحبت کنید، تایپ کنید: "اپراتور"';
+        
+        case 'general':
+        default:
+            if (context.hasProducts) {
+                return `من ${context.productCount} محصول مرتبط برای شما پیدا کردم! 🎯\nبه نظر کدام یک بیشتر می‌پسندید؟ اگر نیاز به اطلاعات بیشتری دارید، بپرسید.`;
+            }
+            return 'متوجه شدم! 🤔\nلطفاً سوال خود را با جزییات بیشتری بپرسید.\nمثلاً:\n• کد رهگیری سفارشم را می‌خواهم بررسی کنم\n• لباس قرمز سایز مدیوم می‌خواهم\n• با اپراتور می‌خواهم صحبت کنم';
+    }
+}
+
+// ==================== ربات تلگرام ====================
+const bot = new Telegraf(TELEGRAM_BOT_TOKEN);
+
+// پذیرش درخواست توسط اپراتور
+bot.action(/accept_(.+)/, async (ctx) => {
+    const short = ctx.match[1];
+    const info = botSessions.get(short);
+    
+    if (!info) {
+        return ctx.answerCbQuery('درخواست منقضی شده است');
+    }
+    
+    botSessions.set(short, { ...info, chatId: ctx.chat.id });
+    getSession(info.fullId).connectedToHuman = true;
+    
+    await ctx.answerCbQuery('✅ درخواست پذیرفته شد');
+    
+    await ctx.editMessageText(`
+🎯 شما این گفتگو را پذیرفتید
+
+👤 کاربر: ${info.userInfo?.name || 'ناشناس'}
+📄 صفحه: ${info.userInfo?.page || 'نامشخص'}
+🌐 آی‌پی: ${info.userInfo?.ip || 'نامشخص'}
+🔢 کد جلسه: ${short}
+
+از این لحظه می‌توانید مستقیم با کاربر چت کنید.
+    `.trim());
+    
+    // اطلاع‌رسانی به کاربر
+    io.to(info.fullId).emit('operator-connected', {
+        message: '🎉 اپراتور انسانی متصل شد!\nلطفاً سوال یا مشکل خود را مطرح کنید.'
+    });
+    
+    // ارسال تاریخچه چت به اپراتور
+    const session = getSession(info.fullId);
+    const history = session.messages
+        .slice(-10) // آخرین 10 پیام
+        .map(m => `${m.role === 'user' ? '👤 کاربر' : '🤖 ربات'}: ${m.content}`)
+        .join('\n\n') || '📝 کاربر هنوز پیامی نفرستاده است';
+    
+    await ctx.reply(`📜 تاریخچه چت:\n\n${history}\n\n📌 برای قطع اتصال، دستور /end را ارسال کنید.`);
+});
+
+// رد درخواست توسط اپراتور
+bot.action(/reject_(.+)/, async (ctx) => {
+    const short = ctx.match[1];
+    const info = botSessions.get(short);
+    
+    if (info) {
+        io.to(info.fullId).emit('operator-rejected', {
+            message: 'متأسفانه در حال حاضر اپراتور در دسترس نیست. لطفاً سوال خود را از من بپرسید.'
         });
-        const data = await res.json();
-        showResult(data.success ? '✅ درخواست ارسال شد' : '❌ خطا');
-      }
-    </script>
-    </html>
-  `);
+        botSessions.delete(short);
+    }
+    
+    await ctx.answerCbQuery('❌ درخواست رد شد');
+    await ctx.deleteMessage();
+});
+
+// پیام اپراتور → ویجت
+bot.on('text', async (ctx) => {
+    if (ctx.message.text.startsWith('/')) {
+        // دستورات مدیریتی
+        if (ctx.message.text === '/end') {
+            const entry = [...botSessions.entries()].find(([_, v]) => v.chatId === ctx.chat.id);
+            if (entry) {
+                io.to(entry[1].fullId).emit('operator-disconnected', {
+                    message: 'اپراتور ارتباط را قطع کرد. برای ارتباط مجدد، "اپراتور" را تایپ کنید.'
+                });
+                botSessions.delete(entry[0]);
+                await ctx.reply('✅ ارتباط با کاربر قطع شد.');
+            }
+            return;
+        }
+        
+        if (ctx.message.text === '/status') {
+            const active = [...botSessions.values()].filter(v => v.chatId === ctx.chat.id).length;
+            await ctx.reply(`📊 وضعیت فعلی:\n• اتصالات فعال: ${active}\n• سشن‌های منتظر: ${botSessions.size - active}`);
+            return;
+        }
+        
+        return;
+    }
+    
+    // ارسال پیام عادی به کاربر
+    const entry = [...botSessions.entries()].find(([_, v]) => v.chatId === ctx.chat.id);
+    if (!entry) {
+        return ctx.reply('⚠️ شما در حال حاضر با هیچ کاربری در ارتباط نیستید.');
+    }
+    
+    const [short, info] = entry;
+    
+    // ارسال پیام به کاربر
+    io.to(info.fullId).emit('operator-message', { 
+        message: ctx.message.text,
+        timestamp: new Date().toLocaleTimeString('fa-IR')
+    });
+    
+    // ذخیره در تاریخچه
+    const session = getSession(info.fullId);
+    session.messages.push({ 
+        role: 'operator', 
+        content: ctx.message.text,
+        timestamp: new Date()
+    });
+    
+    await ctx.reply('✅ پیام ارسال شد.');
+});
+
+// وب‌هوک تلگرام
+app.post('/telegram-webhook', async (req, res) => {
+    try {
+        await bot.handleUpdate(req.body, res);
+    } catch (error) {
+        console.error('❌ خطا در وب‌هوک تلگرام:', error);
+        res.status(200).end();
+    }
+});
+
+// ==================== مسیرهای API ====================
+
+// سلامت سرور و دیتابیس
+app.get('/api/health', async (req, res) => {
+    try {
+        const dbConnected = await initializeDatabase();
+        res.json({
+            status: 'healthy',
+            timestamp: new Date().toISOString(),
+            database: dbConnected ? 'connected' : 'disconnected',
+            sessions: cache.keys().length,
+            pending_requests: botSessions.size,
+            memory: process.memoryUsage()
+        });
+    } catch (error) {
+        res.status(500).json({ status: 'unhealthy', error: error.message });
+    }
+});
+
+// درخواست جدید از ویجت
+app.post('/api/webhook', async (req, res) => {
+    try {
+        const { event, data } = req.body;
+        
+        if (event !== 'new_session') {
+            return res.status(400).json({ success: false, error: 'رویداد نامعتبر' });
+        }
+        
+        const { sessionId, userInfo, userMessage } = data;
+        
+        if (!sessionId) {
+            return res.status(400).json({ success: false, error: 'شناسه جلسه الزامی است' });
+        }
+        
+        const short = sessionId.substring(0, 12);
+        botSessions.set(short, { 
+            fullId: sessionId, 
+            userInfo: userInfo || {}, 
+            chatId: null,
+            createdAt: new Date()
+        });
+        
+        const userName = userInfo?.name || 'ناشناس';
+        const userPage = userInfo?.page || 'نامشخص';
+        const userIp = userInfo?.ip || 'نامشخص';
+        
+        // اطلاع به تلگرام
+        await bot.telegram.sendMessage(ADMIN_TELEGRAM_ID, `
+🔔 درخواست پشتیبانی جدید
+
+👤 نام: ${userName}
+📄 صفحه: ${userPage}
+🌐 آی‌پی: ${userIp}
+🔢 کد جلسه: ${short}
+💬 پیام اول: ${userMessage || 'درخواست اتصال به اپراتور'}
+
+🕐 زمان: ${new Date().toLocaleTimeString('fa-IR')}
+        `.trim(), {
+            reply_markup: {
+                inline_keyboard: [[
+                    { text: '✅ پذیرش درخواست', callback_data: `accept_${short}` },
+                    { text: '❌ رد درخواست', callback_data: `reject_${short}` }
+                ]]
+            }
+        });
+        
+        res.json({ 
+            success: true, 
+            sessionId: short,
+            message: 'درخواست ثبت شد و به اپراتورها اطلاع داده شد.' 
+        });
+        
+    } catch (error) {
+        console.error('❌ خطا در وب‌هوک:', error);
+        res.status(500).json({ success: false, error: 'خطای داخلی سرور' });
+    }
+});
+
+// اتصال به اپراتور انسانی
+app.post('/api/connect-human', async (req, res) => {
+    try {
+        const { sessionId, userInfo } = req.body;
+        
+        if (!sessionId) {
+            return res.status(400).json({ success: false, error: 'شناسه جلسه الزامی است' });
+        }
+        
+        const session = getSession(sessionId);
+        session.userInfo = { ...session.userInfo, ...userInfo };
+        
+        // ارسال درخواست به سیستم اطلاع‌رسانی
+        await axios.post(`${BASE_URL}/api/webhook`, {
+            event: 'new_session',
+            data: { 
+                sessionId, 
+                userInfo: session.userInfo, 
+                userMessage: 'درخواست اتصال به اپراتور انسانی' 
+            }
+        }).catch(() => {
+            console.log('⚠️ وب‌هوک داخلی پاسخ نداد');
+        });
+        
+        res.json({ 
+            success: true, 
+            pending: true,
+            message: 'درخواست شما برای اتصال به اپراتور انسانی ثبت شد. لطفاً منتظر بمانید...' 
+        });
+        
+    } catch (error) {
+        console.error('❌ خطا در اتصال به اپراتور:', error);
+        res.status(500).json({ success: false, error: 'خطای داخلی سرور' });
+    }
+});
+
+// سیستم چت هوشمند اصلی
+app.post('/api/chat', async (req, res) => {
+    try {
+        const { message, sessionId } = req.body;
+        
+        if (!message || !sessionId) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'پیام و شناسه جلسه الزامی هستند' 
+            });
+        }
+        
+        const session = getSession(sessionId);
+        session.messages.push({ role: 'user', content: message });
+        
+        // بررسی اگر کاربر به اپراتور متصل است
+        const short = sessionId.substring(0, 12);
+        const botSession = botSessions.get(short);
+        
+        if (botSession?.chatId) {
+            // کاربر در حال چت با اپراتور است
+            return res.json({ 
+                success: true, 
+                operatorConnected: true,
+                message: 'پیام شما به اپراتور ارسال شد.' 
+            });
+        }
+        
+        // تحلیل پیام
+        const analysis = analyzeMessage(message);
+        
+        // اگر کد رهگیری بود
+        if (analysis.type === 'tracking') {
+            session.messages.push({ role: 'ai', content: 'در حال جستجوی سفارش...' });
+            
+            const orderInfo = await trackOrderFromDatabase(analysis.code);
+            
+            if (orderInfo.found) {
+                const order = orderInfo.order;
+                const response = `
+🎯 **سفارش پیدا شد!**
+
+📦 **کد سفارش:** ${order.number}
+📮 **کد رهگیری:** ${order.tracking_code}
+👤 **مشتری:** ${order.customer_name}
+📅 **تاریخ ثبت:** ${order.date}
+🟢 **وضعیت:** ${order.status}
+💰 **مبلغ کل:** ${order.total} تومان
+💳 **روش پرداخت:** ${order.payment_method}
+📞 **تلفن:** ${order.phone}
+📧 **ایمیل:** ${order.email}
+
+🛍️ **محصولات:**
+${order.items.map((item, i) => `${i+1}. ${item}`).join('\n')}
+
+✅ سفارش شما در حال پردازش است. به زودی ارسال می‌شود.
+                `.trim();
+                
+                session.messages.push({ role: 'ai', content: response });
+                return res.json({ success: true, message: response });
+            } else {
+                const response = `❌ **سفارش یافت نشد!**\n\nسفارشی با کد "${analysis.code}" در سیستم یافت نشد.\n\nلطفاً موارد زیر را بررسی کنید:\n• کد رهگیری را دقیق وارد کنید\n• ممکن است سفارش هنوز در سیستم ثبت نشده باشد\n• برای بررسی بیشتر، "اپراتور" را تایپ کنید`;
+                session.messages.push({ role: 'ai', content: response });
+                return res.json({ success: true, message: response });
+            }
+        }
+        
+        // اگر درخواست محصول بود
+        if (analysis.type === 'product_request') {
+            const aiResponse = generateAIResponse(analysis);
+            session.messages.push({ role: 'ai', content: aiResponse });
+            
+            // جستجوی محصولات در پس‌زمینه
+            setTimeout(async () => {
+                try {
+                    const products = await suggestProductsFromDatabase(analysis);
+                    
+                    if (products.length > 0) {
+                        let productList = `🎁 **${products.length} محصول مرتبط پیدا کردم:**\n\n`;
+                        
+                        products.forEach((product, index) => {
+                            productList += `**${index + 1}. ${product.post_title}**\n`;
+                            productList += `💰 قیمت: ${product.final_price} تومان\n`;
+                            if (product.has_discount) {
+                                productList += `🔥 **تخفیف ویژه!**\n`;
+                            }
+                            if (product.product_type) {
+                                productList += `📌 دسته: ${product.product_type}\n`;
+                            }
+                            productList += `🔗 آدرس: https://shikpooshaan.ir/product/${product.ID}/\n\n`;
+                        });
+                        
+                        productList += `💡 **راهنمایی:**\nبرای اطلاعات بیشتر درباره هر محصول، شماره آن را بنویسید (مثلاً "محصول 1")\nیا برای خرید مستقیم روی لینک محصول کلیک کنید.`;
+                        
+                        // ذخیره در سشن برای ارسال به کاربر
+                        session.messages.push({ role: 'ai', content: productList });
+                        
+                        // ارسال به سوکت اگر کاربر آنلاین است
+                        if (io.sockets.adapter.rooms.has(sessionId)) {
+                            io.to(sessionId).emit('ai-message', { 
+                                message: productList,
+                                type: 'product_suggestions'
+                            });
+                        }
+                    }
+                } catch (error) {
+                    console.error('❌ خطا در جستجوی محصولات:', error);
+                }
+            }, 100);
+            
+            return res.json({ success: true, message: aiResponse });
+        }
+        
+        // پاسخ‌های عمومی
+        const aiResponse = generateAIResponse(analysis);
+        session.messages.push({ role: 'ai', content: aiResponse });
+        
+        return res.json({ 
+            success: true, 
+            message: aiResponse,
+            analysis: analysis.type 
+        });
+        
+    } catch (error) {
+        console.error('❌ خطا در سیستم چت:', error);
+        
+        const fallbackResponse = `
+⚠️ **خطای موقت در سیستم**
+
+متأسفانه در حال حاضر با خطای موقت مواجه شده‌ایم.
+لطفاً:
+
+1. چند لحظه صبر کنید و دوباره تلاش کنید
+2. یا مستقیماً با شماره پشتیبانی تماس بگیرید
+3. یا "اپراتور" را تایپ کنید تا با اپراتور انسانی صحبت کنید
+
+با تشکر از صبر و شکیبایی شما 🙏
+        `.trim();
+        
+        return res.json({ 
+            success: false, 
+            message: fallbackResponse 
+        });
+    }
+});
+
+// دریافت تاریخچه چت
+app.get('/api/chat-history/:sessionId', (req, res) => {
+    try {
+        const { sessionId } = req.params;
+        const session = getSession(sessionId);
+        
+        res.json({
+            success: true,
+            sessionId,
+            messages: session.messages.slice(-50), // آخرین 50 پیام
+            userInfo: session.userInfo,
+            connectedToHuman: session.connectedToHuman,
+            lastActivity: session.lastActivity
+        });
+        
+    } catch (error) {
+        console.error('❌ خطا در دریافت تاریخچه:', error);
+        res.status(500).json({ success: false, error: 'خطای داخلی سرور' });
+    }
+});
+
+// جستجوی مستقیم محصولات
+app.post('/api/search-products', async (req, res) => {
+    try {
+        const { query, colors, sizes, limit = 5 } = req.body;
+        
+        if (!query && !colors && !sizes) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'حداقل یک پارامتر جستجو الزامی است' 
+            });
+        }
+        
+        const analysis = {
+            type: 'product_request',
+            colors: colors ? (Array.isArray(colors) ? colors : [colors]) : null,
+            sizes: sizes ? (Array.isArray(sizes) ? sizes : [sizes]) : null,
+            keywords: query ? tokenizer.tokenize(query.toLowerCase()) : []
+        };
+        
+        const products = await suggestProductsFromDatabase(analysis);
+        
+        res.json({
+            success: true,
+            count: products.length,
+            products: products.map(p => ({
+                id: p.ID,
+                title: p.post_title,
+                price: p.final_price,
+                has_discount: p.has_discount,
+                type: p.product_type,
+                url: `https://shikpooshaan.ir/product/${p.ID}/`,
+                image: p.image_url
+            }))
+        });
+        
+    } catch (error) {
+        console.error('❌ خطا در جستجوی محصولات:', error);
+        res.status(500).json({ success: false, error: 'خطای داخلی سرور' });
+    }
+});
+
+// ==================== سوکت آی‌او ====================
+io.on('connection', (socket) => {
+    console.log('🔌 کاربر جدید متصل شد:', socket.id);
+    
+    socket.on('join-session', (sessionId) => {
+        socket.join(sessionId);
+        console.log(`📝 کاربر به سشن ${sessionId} پیوست`);
+        
+        // اطلاع‌رسانی آنلاین بودن
+        socket.to(sessionId).emit('user-online', { status: 'online' });
+    });
+    
+    socket.on('user-message', async ({ sessionId, message }) => {
+        if (!sessionId || !message) return;
+        
+        console.log(`💬 پیام از سشن ${sessionId}:`, message.substring(0, 50));
+        
+        const short = sessionId.substring(0, 12);
+        const info = botSessions.get(short);
+        
+        // اگر کاربر با اپراتور در ارتباط است
+        if (info?.chatId) {
+            const userName = info.userInfo?.name || 'ناشناس';
+            const userPage = info.userInfo?.page || 'نامشخص';
+            const userIp = info.userInfo?.ip || 'نامشخص';
+            
+            await bot.telegram.sendMessage(info.chatId, `
+📩 **پیام جدید از کاربر**
+
+👤 نام: ${userName}
+📄 صفحه: ${userPage}
+🌐 آی‌پی: ${userIp}
+🔢 کد جلسه: ${short}
+
+💬 پیام:
+${message}
+
+🕐 زمان: ${new Date().toLocaleTimeString('fa-IR')}
+            `.trim());
+        }
+        
+        // ذخیره در تاریخچه سشن
+        const session = getSession(sessionId);
+        session.messages.push({ 
+            role: 'user', 
+            content: message,
+            timestamp: new Date(),
+            via: 'socket'
+        });
+    });
+    
+    socket.on('user-file', async ({ sessionId, fileName, fileBase64 }) => {
+        const short = sessionId.substring(0, 12);
+        const info = botSessions.get(short);
+        
+        if (info?.chatId) {
+            try {
+                const buffer = Buffer.from(fileBase64, 'base64');
+                await bot.telegram.sendDocument(info.chatId, { 
+                    source: buffer, 
+                    filename: fileName 
+                });
+                
+                // اطلاع به کاربر
+                socket.emit('file-sent', { success: true, fileName });
+            } catch (error) {
+                console.error('❌ خطا در ارسال فایل:', error);
+                socket.emit('file-error', { error: 'خطا در ارسال فایل' });
+            }
+        }
+    });
+    
+    socket.on('user-voice', async ({ sessionId, voiceBase64 }) => {
+        const short = sessionId.substring(0, 12);
+        const info = botSessions.get(short);
+        
+        if (info?.chatId) {
+            try {
+                const buffer = Buffer.from(voiceBase64, 'base64');
+                await bot.telegram.sendVoice(info.chatId, { 
+                    source: buffer 
+                });
+                
+                socket.emit('voice-sent', { success: true });
+            } catch (error) {
+                console.error('❌ خطا در ارسال ویس:', error);
+                socket.emit('voice-error', { error: 'خطا در ارسال پیام صوتی' });
+            }
+        }
+    });
+    
+    socket.on('disconnect', () => {
+        console.log('🔌 کاربر قطع شد:', socket.id);
+    });
+});
+
+// ==================== مسیرهای استاتیک و فال‌بک ====================
+app.get('/api/test-db', async (req, res) => {
+    try {
+        const connected = await initializeDatabase();
+        if (!connected) {
+            return res.json({ success: false, error: 'اتصال به دیتابیس ناموفق' });
+        }
+        
+        // تست کوئری ساده
+        const [rows] = await dbPool.execute('SELECT COUNT(*) as count FROM wp_posts WHERE post_type = "product"');
+        const [orderRows] = await dbPool.execute('SELECT COUNT(*) as count FROM wp_posts WHERE post_type = "shop_order"');
+        
+        res.json({
+            success: true,
+            database: 'connected',
+            products_count: rows[0]?.count || 0,
+            orders_count: orderRows[0]?.count || 0,
+            tables: [
+                'wp_posts',
+                'wp_postmeta', 
+                'wp_woocommerce_order_items',
+                'wp_woocommerce_order_itemmeta'
+            ]
+        });
+        
+    } catch (error) {
+        res.json({ 
+            success: false, 
+            error: error.message,
+            config: { ...dbConfig, password: '***' } 
+        });
+    }
 });
 
 // صفحه اصلی
 app.get('/', (req, res) => {
-  res.redirect('/test');
+    res.json({
+        name: 'Shikpooshan AI Support System',
+        version: '2.0.0',
+        endpoints: [
+            { path: '/api/chat', method: 'POST', description: 'سیستم چت هوشمند' },
+            { path: '/api/connect-human', method: 'POST', description: 'اتصال به اپراتور' },
+            { path: '/api/search-products', method: 'POST', description: 'جستجوی محصولات' },
+            { path: '/api/health', method: 'GET', description: 'سلامت سیستم' },
+            { path: '/api/test-db', method: 'GET', description: 'تست دیتابیس' }
+        ],
+        status: 'operational',
+        timestamp: new Date().toISOString()
+    });
 });
 
-// ==================== راه‌اندازی ====================
-server.listen(PORT, async () => {
-  console.log(`🚀 سرور روی پورت ${PORT}`);
-  
-  try {
-    await bot.telegram.sendMessage(ADMIN_TELEGRAM_ID, '🤖 ربات پشتیبانی فعال شد');
-    bot.launch();
-  } catch (error) {
-    console.log('⚠️ تلگرام: ', error.message);
-  }
+// فال‌بک برای SPA
+app.get('*', (req, res) => {
+    if (req.accepts('html')) {
+        res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    } else {
+        res.status(404).json({ error: 'مسیر یافت نشد' });
+    }
 });
 
-app.post('/telegram-webhook', (req, res) => {
-  bot.handleUpdate(req.body, res);
+// ==================== راه‌اندازی سرور ====================
+async function startServer() {
+    try {
+        // راه‌اندازی دیتابیس
+        await initializeDatabase();
+        
+        // راه‌اندازی سرور
+        server.listen(PORT, '0.0.0.0', async () => {
+            console.log(`🚀 سرور روی پورت ${PORT} فعال شد`);
+            console.log(`🌐 آدرس: ${BASE_URL}`);
+            console.log(`📊 وضعیت: http://localhost:${PORT}/api/health`);
+            
+            try {
+                // تنظیم وب‌هوک تلگرام
+                await bot.telegram.setWebhook(`${BASE_URL}/telegram-webhook`);
+                console.log('✅ وب‌هوک تلگرام تنظیم شد:', `${BASE_URL}/telegram-webhook`);
+                
+                // اطلاع به ادمین
+                await bot.telegram.sendMessage(ADMIN_TELEGRAM_ID, `
+🤖 **سیستم پشتیبانی هوشمند فعال شد**
+
+✅ سرور: ${BASE_URL}
+✅ دیتابیس: متصل
+✅ سوکت: فعال
+✅ تاریخ: ${new Date().toLocaleDateString('fa-IR')}
+🕐 زمان: ${new Date().toLocaleTimeString('fa-IR')}
+
+✨ سیستم آماده خدمات‌رسانی است.
+                `.trim());
+                
+            } catch (telegramError) {
+                console.warn('⚠️ وب‌هوک تلگرام تنظیم نشد، حالت polling فعال شد');
+                bot.launch();
+            }
+        });
+        
+    } catch (error) {
+        console.error('❌ خطای بحرانی در راه‌اندازی سرور:', error);
+        process.exit(1);
+    }
+}
+
+// هندلر خطاهای غیرمنتظره
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('❌ خطای unhandledRejection:', reason);
 });
 
-module.exports = app;
+process.on('uncaughtException', (error) => {
+    console.error('❌ خطای uncaughtException:', error);
+});
+
+// شروع سرور
+startServer();
+
+module.exports = { app, server, io };
