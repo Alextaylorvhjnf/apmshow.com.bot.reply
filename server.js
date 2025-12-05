@@ -66,65 +66,21 @@ const getSession = (sessionId) => {
 };
 
 // ==================== تابع جستجوی سفارش ====================
+// ==================== تابع جستجوی پیشرفته سفارش ====================
 async function findOrderByTrackingCode(trackingCode) {
   const cleanCode = trackingCode.trim();
   
-  if (!cleanCode || cleanCode.length < 3) {
+  if (!cleanCode || cleanCode.length < 2) {
     return { 
       found: false, 
-      message: 'کد وارد شده بسیار کوتاه است (حداقل ۳ رقم)'
+      message: 'کد وارد شده کوتاه است'
     };
   }
   
-  console.log(`🔍 جستجوی سفارش با کد: ${cleanCode}`);
+  console.log(`🔍 جستجوی پیشرفته سفارش با: "${cleanCode}"`);
   
   try {
-    // روش ۱: جستجو در post_title (شماره سفارش)
-    const [ordersByTitle] = await pool.execute(`
-      SELECT 
-        ID as order_id,
-        post_date,
-        post_status,
-        post_title
-      FROM wp_posts 
-      WHERE post_type = 'shop_order' 
-        AND post_status NOT IN ('trash', 'auto-draft')
-        AND post_title LIKE ?
-      ORDER BY post_date DESC 
-      LIMIT 1
-    `, [`%${cleanCode}%`]);
-    
-    if (ordersByTitle.length > 0) {
-      console.log(`✅ سفارش در post_title پیدا شد: ${ordersByTitle[0].order_id}`);
-      return await getFullOrderDetails(ordersByTitle[0].order_id, cleanCode);
-    }
-    
-    // روش ۲: جستجو در متادیتاهای سفارش
-    const [trackingMeta] = await pool.execute(`
-      SELECT 
-        p.ID as order_id,
-        p.post_date,
-        p.post_title,
-        pm.meta_key,
-        pm.meta_value
-      FROM wp_posts p
-      INNER JOIN wp_postmeta pm ON pm.post_id = p.ID
-      WHERE p.post_type = 'shop_order'
-        AND p.post_status NOT IN ('trash', 'auto-draft')
-        AND (
-          pm.meta_value LIKE ?
-          OR pm.meta_value = ?
-        )
-      ORDER BY p.post_date DESC
-      LIMIT 1
-    `, [`%${cleanCode}%`, cleanCode]);
-    
-    if (trackingMeta.length > 0) {
-      console.log(`✅ سفارش در متادیتاها پیدا شد: ${trackingMeta[0].order_id}`);
-      return await getFullOrderDetails(trackingMeta[0].order_id, cleanCode);
-    }
-    
-    // روش ۳: جستجو با ID سفارش
+    // ===== روش 1: جستجو در ID سفارش =====
     if (/^\d+$/.test(cleanCode)) {
       const [ordersById] = await pool.execute(`
         SELECT 
@@ -135,31 +91,158 @@ async function findOrderByTrackingCode(trackingCode) {
         FROM wp_posts 
         WHERE ID = ? 
           AND post_type = 'shop_order'
+          AND post_status != 'trash'
         LIMIT 1
       `, [cleanCode]);
       
       if (ordersById.length > 0) {
-        console.log(`✅ سفارش با ID پیدا شد: ${ordersById[0].order_id}`);
+        console.log(`✅ سفارش با ID ${cleanCode} پیدا شد`);
         return await getFullOrderDetails(ordersById[0].order_id, cleanCode);
       }
     }
     
-    // سفارش پیدا نشد
+    // ===== روش 2: جستجو در post_title (شماره سفارش) =====
+    // حالت‌های مختلف جستجو
+    const searchPatterns = [
+      `%${cleanCode}%`,                    // 7123
+      `%#${cleanCode}%`,                   // #7123
+      `%order ${cleanCode}%`,              // Order 7123
+      `%سفارش ${cleanCode}%`,              // سفارش 7123
+      `%${cleanCode.padStart(5, '0')}%`,   // 07123
+      `%${cleanCode.padStart(6, '0')}%`    // 007123
+    ];
+    
+    for (const pattern of searchPatterns) {
+      const [ordersByTitle] = await pool.execute(`
+        SELECT 
+          ID as order_id,
+          post_date,
+          post_status,
+          post_title
+        FROM wp_posts 
+        WHERE post_type = 'shop_order'
+          AND post_status != 'trash'
+          AND post_title LIKE ?
+        ORDER BY ID DESC
+        LIMIT 1
+      `, [pattern]);
+      
+      if (ordersByTitle.length > 0) {
+        console.log(`✅ سفارش با الگوی "${pattern}" پیدا شد: ${ordersByTitle[0].order_id}`);
+        return await getFullOrderDetails(ordersByTitle[0].order_id, cleanCode);
+      }
+    }
+    
+    // ===== روش 3: جستجو در متادیتاها =====
+    // کد رهگیری در فیلدهای مختلف
+    const metaKeys = [
+      '_tracking_number',
+      '_shipping_tracking_number',
+      '_billing_phone',
+      '_billing_email',
+      '_order_key',
+      '_transaction_id'
+    ];
+    
+    for (const metaKey of metaKeys) {
+      const [ordersByMeta] = await pool.execute(`
+        SELECT 
+          p.ID as order_id,
+          p.post_date
+        FROM wp_posts p
+        INNER JOIN wp_postmeta pm ON pm.post_id = p.ID
+        WHERE p.post_type = 'shop_order'
+          AND p.post_status != 'trash'
+          AND pm.meta_key = ?
+          AND pm.meta_value LIKE ?
+        ORDER BY p.post_date DESC
+        LIMIT 1
+      `, [metaKey, `%${cleanCode}%`]);
+      
+      if (ordersByMeta.length > 0) {
+        console.log(`✅ سفارش در متادیتای ${metaKey} پیدا شد`);
+        return await getFullOrderDetails(ordersByMeta[0].order_id, cleanCode);
+      }
+    }
+    
+    // ===== روش 4: جستجو در همه متادیتاها =====
+    const [ordersInAnyMeta] = await pool.execute(`
+      SELECT DISTINCT
+        p.ID as order_id,
+        p.post_date
+      FROM wp_posts p
+      INNER JOIN wp_postmeta pm ON pm.post_id = p.ID
+      WHERE p.post_type = 'shop_order'
+        AND p.post_status != 'trash'
+        AND pm.meta_value LIKE ?
+      ORDER BY p.post_date DESC
+      LIMIT 1
+    `, [`%${cleanCode}%`]);
+    
+    if (ordersInAnyMeta.length > 0) {
+      console.log(`✅ سفارش در یکی از متادیتاها پیدا شد`);
+      return await getFullOrderDetails(ordersInAnyMeta[0].order_id, cleanCode);
+    }
+    
+    // ===== روش 5: اگر کاربر شماره تلفن وارد کرده =====
+    if (cleanCode.length >= 10 && /^[0-9]+$/.test(cleanCode)) {
+      const [ordersByPhone] = await pool.execute(`
+        SELECT 
+          p.ID as order_id,
+          p.post_date
+        FROM wp_posts p
+        INNER JOIN wp_postmeta pm ON pm.post_id = p.ID
+        WHERE p.post_type = 'shop_order'
+          AND p.post_status != 'trash'
+          AND pm.meta_key = '_billing_phone'
+          AND REPLACE(pm.meta_value, ' ', '') LIKE ?
+        ORDER BY p.post_date DESC
+        LIMIT 1
+      `, [`%${cleanCode.replace(/\D/g, '')}%`]);
+      
+      if (ordersByPhone.length > 0) {
+        console.log(`✅ سفارش با شماره تلفن پیدا شد`);
+        return await getFullOrderDetails(ordersByPhone[0].order_id, cleanCode);
+      }
+    }
+    
+    // ===== سفارش پیدا نشد - اطلاعات مفید برگردان =====
+    console.log(`❌ سفارشی با "${cleanCode}" پیدا نشد`);
+    
+    // اطلاعاتی برای کمک به کاربر
+    const [suggestions] = await pool.execute(`
+      SELECT 
+        ID as order_id,
+        post_title as order_number,
+        post_date
+      FROM wp_posts 
+      WHERE post_type = 'shop_order'
+        AND post_status != 'trash'
+      ORDER BY post_date DESC
+      LIMIT 3
+    `);
+    
+    const sampleOrders = suggestions.map(order => 
+      `• شماره سفارش: ${order.order_number} (ID: ${order.order_id})`
+    ).join('\n');
+    
     return {
       found: false,
       message: `سفارشی با کد «${cleanCode}» پیدا نشد.`,
       suggestions: [
-        'کد رهگیری را دقیق وارد کنید',
-        'شماره سفارش خود را امتحان کنید',
-        'سفارش ممکن است هنوز در سیستم ثبت نشده باشد'
-      ]
+        'کد را دقیق وارد کنید',
+        'شماره سفارش ممکن است متفاوت باشد',
+        'شماره تلفن خود را امتحان کنید'
+      ],
+      sample_orders: sampleOrders,
+      tip: 'آیا شماره سفارش شما شبیه این‌ها است؟'
     };
     
   } catch (error) {
     console.error('❌ خطا در جستجوی سفارش:', error);
     return {
       found: false,
-      message: 'خطا در سرویس پیگیری. لطفاً لحظاتی دیگر تلاش کنید.',
+      message: 'خطا در سرویس پیگیری',
       error: error.message
     };
   }
