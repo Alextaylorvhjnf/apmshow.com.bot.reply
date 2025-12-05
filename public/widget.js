@@ -1,4 +1,4 @@
- class ChatWidget {
+class ChatWidget {
     constructor(options = {}) {
         this.options = {
             backendUrl: options.backendUrl || window.location.origin,
@@ -16,7 +16,6 @@
             isTyping: false,
             isConnecting: false
         };
-        // برای چشمک زدن تب و صدا
         this.tabNotificationInterval = null;
         this.originalTitle = document.title;
         this.tabNotifyText = 'پیام جدید از پشتیبانی';
@@ -46,7 +45,6 @@
             link.crossOrigin = 'anonymous';
             document.head.appendChild(link);
         }
-        // اضافه کردن انیمیشن pulse برای دکمه
         const style = document.createElement('style');
         style.textContent = `
             @keyframes pulse {
@@ -73,6 +71,20 @@
                 justify-content: center;
                 border: 2px solid white;
                 box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            }
+            .attach-btn, .voice-btn {
+                background: #3498db;
+                color: white;
+                border: none;
+                width: 40px;
+                height: 40px;
+                border-radius: 50%;
+                cursor: pointer;
+                margin: 0 5px;
+                font-size: 18px;
+            }
+            .voice-btn.recording {
+                background: #e74c3c !important;
             }
         `;
         document.head.appendChild(style);
@@ -134,6 +146,7 @@
                 <div class="chat-input-area">
                     <div class="input-wrapper">
                         <textarea class="message-input" placeholder="پیام خود را بنویسید..." rows="1"></textarea>
+                        <div class="input-buttons" style="display: none;"></div>
                         <button class="send-btn"><i class="fas fa-paper-plane"></i></button>
                     </div>
                     <button class="human-support-btn">
@@ -156,7 +169,8 @@
             connectionStatus: this.container.querySelector('.connection-status'),
             operatorInfo: this.container.querySelector('.operator-info'),
             notificationBadge: this.container.querySelector('.notification-badge'),
-            chatStatus: this.container.querySelector('.chat-status')
+            chatStatus: this.container.querySelector('.chat-status'),
+            inputButtons: this.container.querySelector('.input-buttons')
         };
     }
     initEvents() {
@@ -217,7 +231,7 @@
         this.elements.chatWindow.classList.toggle('active');
         if (this.state.isOpen) {
             this.elements.messageInput.focus();
-            this.resetNotification(); // مهم: وقتی باز کرد، نوتیفیکیشن صفر بشه
+            this.resetNotification();
         }
     }
     closeChat() {
@@ -254,7 +268,6 @@
         }
     }
     async sendToAI(message) {
-        // ... همون کد قبلی (بدون تغییر)
         try {
             const response = await fetch(`${this.options.backendUrl}/api/chat`, {
                 method: 'POST',
@@ -293,6 +306,8 @@
                 this.elements.humanSupportBtn.innerHTML = `<i class="fas fa-user-check"></i> متصل به اپراتور`;
                 this.elements.humanSupportBtn.style.background = 'linear-gradient(145deg, #2ecc71, #27ae60)';
                 this.elements.humanSupportBtn.disabled = true;
+                // اضافه کردن دکمه فایل و ویس
+                this.addFileAndVoiceButtons();
             } else {
                 this.resetHumanSupportButton();
             }
@@ -312,6 +327,78 @@
         this.state.operatorConnected = true;
         this.elements.operatorInfo.classList.add('active');
         this.addMessage('system', data.message || 'اپراتور متصل شد!');
+        this.addFileAndVoiceButtons();
+    }
+    addFileAndVoiceButtons() {
+        if (this.elements.inputButtons.querySelector('.attach-btn')) return;
+
+        this.elements.inputButtons.style.display = 'flex';
+
+        // دکمه فایل
+        const fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.style.display = 'none';
+        this.elements.inputButtons.appendChild(fileInput);
+
+        const fileBtn = document.createElement('button');
+        fileBtn.innerHTML = '<i class="fas fa-paperclip"></i>';
+        fileBtn.className = 'attach-btn';
+        fileBtn.onclick = () => fileInput.click();
+        this.elements.inputButtons.appendChild(fileBtn);
+
+        fileInput.onchange = (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                const base64 = ev.target.result.split(',')[1];
+                this.state.socket.emit('user-file', {
+                    sessionId: this.state.sessionId,
+                    fileName: file.name,
+                    fileBase64: base64
+                });
+                this.addMessage('user', `فایل ارسال شد: ${file.name}`);
+            };
+            reader.readAsDataURL(file);
+        };
+
+        // دکمه ویس
+        let recorder;
+        const voiceBtn = document.createElement('button');
+        voiceBtn.innerHTML = '<i class="fas fa-microphone"></i>';
+        voiceBtn.className = 'voice-btn';
+        this.elements.inputButtons.appendChild(voiceBtn);
+
+        voiceBtn.onmousedown = async () => {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                recorder = new MediaRecorder(stream);
+                const chunks = [];
+                recorder.ondataavailable = e => chunks.push(e.data);
+                recorder.onstop = () => {
+                    const blob = new Blob(chunks, { type: 'audio/webm' });
+                    const reader = new FileReader();
+                    reader.onload = (ev) => {
+                        const base64 = ev.target.result.split(',')[1];
+                        this.state.socket.emit('user-voice', {
+                            sessionId: this.state.sessionId,
+                            voiceBase64: base64
+                        });
+                        this.addMessage('user', 'ویس ارسال شد');
+                    };
+                    reader.readAsDataURL(blob);
+                };
+                recorder.start();
+                voiceBtn.classList.add('recording');
+            } catch (err) {
+                this.addMessage('system', 'دسترسی به میکروفون داده نشد');
+            }
+        };
+
+        voiceBtn.onmouseup = voiceBtn.onmouseleave = () => {
+            if (recorder) recorder.stop();
+            voiceBtn.classList.remove('recording');
+        };
     }
     // صدا + نوتیفیکیشن + چشمک تب
     playNotificationSound() {
@@ -372,7 +459,6 @@
         this.elements.messagesContainer.appendChild(messageEl);
         this.elements.messagesContainer.scrollTop = this.elements.messagesContainer.scrollHeight;
         this.state.messages.push({ type, text, time });
-        // صدا و نوتیفیکیشن فقط برای پیام‌های غیر از کاربر
         if (type === 'operator' || type === 'assistant' || type === 'system') {
             this.playNotificationSound();
             if (!this.state.isOpen) this.showNotification();
