@@ -104,7 +104,13 @@ async function trackOrderFromAPI(trackingCode) {
                 action: 'track_order', 
                 tracking_code: trackingCode 
             }, 
-            { timeout: 10000 }
+            { 
+                timeout: 10000,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                }
+            }
         );
         
         return result.data;
@@ -113,10 +119,11 @@ async function trackOrderFromAPI(trackingCode) {
         console.error('❌ خطا در ارتباط با API سایت:', error.message);
         return { 
             found: false, 
-            message: 'خطا در ارتباط با سرور اصلی. لطفاً دوباره تلاش کنید.' 
+            message: 'خطا در ارتباط با سرور اصلی سایت. لطفاً چند دقیقه دیگر تلاش کنید.' 
         };
     }
 }
+
 
 // ==================== سیستم جستجوی محصول از API سایت ====================
 async function searchProductsFromAPI(keyword) {
@@ -127,14 +134,19 @@ async function searchProductsFromAPI(keyword) {
                 action: 'search_product',
                 keyword: keyword
             },
-            { timeout: 10000 }
+            { 
+                timeout: 10000,
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            }
         );
         
         return result.data;
         
     } catch (error) {
         console.error('❌ خطا در جستجوی محصول:', error.message);
-        return { products: [] };
+        return { products: [], success: false };
     }
 }
 
@@ -326,7 +338,9 @@ app.post('/api/chat', async (req, res) => {
                     userInfo: session.userInfo, 
                     userMessage: 'درخواست اتصال به اپراتور' 
                 }
-            }).catch(() => {});
+            }).catch(() => {
+                console.log('⚠️ ارسال به وب‌هوک انجام نشد');
+            });
             
             return res.json({ 
                 success: true, 
@@ -340,14 +354,14 @@ app.post('/api/chat', async (req, res) => {
             const aiResponse = generateResponse(analysis);
             session.messages.push({ role: 'assistant', content: aiResponse });
             
-            // ارسال پاسخ اولیه
+            // پاسخ فوری بده
             res.json({ 
                 success: true, 
                 message: aiResponse,
                 tracking: true 
             });
             
-            // در پس‌زمینه اطلاعات رو بگیر
+            // در پس‌زمینه اطلاعات رو بگیر و از سوکت بفرست
             setTimeout(async () => {
                 try {
                     const orderInfo = await trackOrderFromAPI(analysis.code);
@@ -372,27 +386,30 @@ app.post('/api/chat', async (req, res) => {
                         session.messages.push({ role: 'assistant', content: reply });
                         
                         // ارسال به کاربر از طریق سوکت
-                        if (io.sockets.adapter.rooms.has(sessionId)) {
-                            io.to(sessionId).emit('ai-message', { 
-                                message: reply,
-                                type: 'order_info' 
-                            });
-                        }
+                        io.to(sessionId).emit('ai-message', { 
+                            message: reply,
+                            type: 'order_info' 
+                        });
                         
                     } else {
                         const reply = `❌ **سفارش یافت نشد!**\n\nسفارشی با کد "${analysis.code}" پیدا نشد.\n\nلطفاً:\n• کد را دوباره بررسی کنید\n• یا "اپراتور" را تایپ کنید`;
                         
                         session.messages.push({ role: 'assistant', content: reply });
                         
-                        if (io.sockets.adapter.rooms.has(sessionId)) {
-                            io.to(sessionId).emit('ai-message', { 
-                                message: reply,
-                                type: 'order_not_found' 
-                            });
-                        }
+                        io.to(sessionId).emit('ai-message', { 
+                            message: reply,
+                            type: 'order_not_found' 
+                        });
                     }
                 } catch (error) {
                     console.error('❌ خطا در پیگیری سفارش:', error);
+                    
+                    const errorReply = `⚠️ **خطا در دریافت اطلاعات**\n\nسیستم در حال حاضر قادر به بررسی سفارش نیست.\nلطفاً بعداً تلاش کنید یا "اپراتور" را تایپ کنید.`;
+                    
+                    io.to(sessionId).emit('ai-message', { 
+                        message: errorReply,
+                        type: 'error' 
+                    });
                 }
             }, 100);
             
@@ -404,7 +421,7 @@ app.post('/api/chat', async (req, res) => {
             const aiResponse = generateResponse(analysis);
             session.messages.push({ role: 'assistant', content: aiResponse });
             
-            // ارسال پاسخ اولیه
+            // پاسخ فوری بده
             res.json({ 
                 success: true, 
                 message: aiResponse,
@@ -436,27 +453,30 @@ app.post('/api/chat', async (req, res) => {
                         session.messages.push({ role: 'assistant', content: productList });
                         
                         // ارسال به کاربر
-                        if (io.sockets.adapter.rooms.has(sessionId)) {
-                            io.to(sessionId).emit('ai-message', { 
-                                message: productList,
-                                type: 'product_suggestions' 
-                            });
-                        }
+                        io.to(sessionId).emit('ai-message', { 
+                            message: productList,
+                            type: 'product_suggestions' 
+                        });
                         
                     } else {
                         const noProductMsg = `❌ **محصولی یافت نشد!**\n\nمتأسفانه محصولی با مشخصات شما پیدا نکردم.\n\nمی‌توانید:\n• نام دقیق‌تر محصول رو بگید\n• یا "اپراتور" رو تایپ کنید`;
                         
                         session.messages.push({ role: 'assistant', content: noProductMsg });
                         
-                        if (io.sockets.adapter.rooms.has(sessionId)) {
-                            io.to(sessionId).emit('ai-message', { 
-                                message: noProductMsg,
-                                type: 'no_products' 
-                            });
-                        }
+                        io.to(sessionId).emit('ai-message', { 
+                            message: noProductMsg,
+                            type: 'no_products' 
+                        });
                     }
                 } catch (error) {
                     console.error('❌ خطا در جستجوی محصول:', error);
+                    
+                    const errorReply = `⚠️ **خطا در جستجوی محصولات**\n\nسیستم جستجو در حال حاضر در دسترس نیست.\nلطفاً بعداً تلاش کنید.`;
+                    
+                    io.to(sessionId).emit('ai-message', { 
+                        message: errorReply,
+                        type: 'error' 
+                    });
                 }
             }, 100);
             
