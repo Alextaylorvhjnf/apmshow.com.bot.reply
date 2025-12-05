@@ -462,82 +462,35 @@ async function processMessage(message, sessionId) {
 
 // ==================== تلگرام ====================
 const bot = new Telegraf(TELEGRAM_BOT_TOKEN);
-// پذیرش درخواست
+
 bot.action(/accept_(.+)/, async (ctx) => {
-  const short = ctx.match[1];
-  const info = botSessions.get(short);
-  if (!info) return ctx.answerCbQuery('منقضی شده');
-  botSessions.set(short, { ...info, chatId: ctx.chat.id });
-  getSession(info.fullId).connectedToHuman = true;
-  await ctx.answerCbQuery('پذیرفته شد');
-  await ctx.editMessageText(`
-شما این گفتگو را پذیرفتید
-کاربر: ${info.userInfo?.name || 'ناشناس'}
-صفحه: ${info.userInfo?.page || 'نامشخص'}
-آی‌پی: ${info.userInfo?.ip || 'نامشخص'}
-کد: ${short}
-  `.trim());
-  io.to(info.fullId).emit('operator-connected', {
-    message: 'اپراتور متصل شد! در حال انتقال به پشتیبان انسانی...'
+  const sessionId = ctx.match[1];
+  const session = getSession(sessionId);
+  session.connectedToHuman = true;
+  cache.set(sessionId, session);
+  
+  await ctx.answerCbQuery('✅ پذیرفته شد');
+  await ctx.editMessageText(`✅ اپراتور متصل شد\nکد: ${sessionId}`);
+  
+  io.to(sessionId).emit('operator-connected', {
+    message: '🎉 اپراتور متصل شد! لطفاً سوال خود را بپرسید.'
   });
-  const session = getSession(info.fullId);
-  const history = session.messages
-    .filter(m => m.role === 'user')
-    .map(m => `کاربر: ${m.content}`)
-    .join('\n\n') || 'کاربر هنوز پیامی نفرستاده';
-  await ctx.reply(`تاریخچه چت:\n\n${history}`);
 });
-// رد درخواست
-bot.action(/reject_(.+)/, async (ctx) => {
-  const short = ctx.match[1];
-  botSessions.delete(short);
-  await ctx.answerCbQuery('رد شد');
-});
-// پیام اپراتور → ویجت
+
 bot.on('text', async (ctx) => {
   if (ctx.message.text.startsWith('/')) return;
-  const entry = [...botSessions.entries()].find(([_, v]) => v.chatId === ctx.chat.id);
-  if (!entry) return;
-  io.to(entry[1].fullId).emit('operator-message', { message: ctx.message.text });
-  await ctx.reply('ارسال شد');
-});
-// وب‌هوک تلگرام
-app.post('/telegram-webhook', (req, res) => bot.handleUpdate(req.body, res));
-// درخواست جدید از ویجت — با صفحه و آی‌پی
-app.post('/webhook', async (req, res) => {
-  if (req.body.event !== 'new_session') return res.json({ success: false });
-  const { sessionId, userInfo, userMessage } = req.body.data;
-  const short = shortId(sessionId);
-  botSessions.set(short, { fullId: sessionId, userInfo: userInfo || {}, chatId: null });
-  const userName = userInfo?.name || 'ناشناس';
-  const userPage = userInfo?.page ? userInfo.page : 'نامشخص';
-  const userIp = userInfo?.ip ? userInfo.ip : 'نامشخص';
-  await bot.telegram.sendMessage(ADMIN_TELEGRAM_ID, `
-درخواست پشتیبانی جدید
-کد جلسه: ${short}
-نام: ${userName}
-صفحه: ${userPage}
-آی‌پی: ${userIp}
-پیام اول: ${userMessage || 'درخواست اتصال به اپراتور'}
-  `.trim(), {
-    reply_markup: {
-      inline_keyboard: [[
-        { text: 'پذیرش', callback_data: `accept_${short}` },
-        { text: 'رد', callback_data: `reject_${short}` }
-      ]]
-    }
-  });
-  res.json({ success: true });
-});
-// اتصال به اپراتور
-app.post('/api/connect-human', async (req, res) => {
-  const { sessionId, userInfo } = req.body;
-  getSession(sessionId).userInfo = userInfo || {};
-  await axios.post(`${BASE_URL}/webhook`, {
-    event: 'new_session',
-    data: { sessionId, userInfo, userMessage: 'درخواست اتصال' }
-  }).catch(() => {});
-  res.json({ success: true, pending: true });
+  
+  const session = [...cache.keys()]
+    .map(key => ({ key, session: cache.get(key) }))
+    .find(s => s.session.connectedToHuman);
+  
+  if (session) {
+    io.to(session.key).emit('operator-message', {
+      message: ctx.message.text,
+      operator: ctx.from.first_name || 'اپراتور'
+    });
+    await ctx.reply('✅ ارسال شد');
+  }
 });
 
 // ==================== API ها ====================
