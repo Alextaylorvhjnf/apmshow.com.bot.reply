@@ -74,6 +74,15 @@ class ChatWidget {
                 border: 2px solid white;
                 box-shadow: 0 2px 8px rgba(0,0,0,0.3);
             }
+            /* رفع مشکل تداخل */
+            .chat-window {
+                display: none;
+            }
+            .chat-window.active {
+                display: flex;
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
         `;
         document.head.appendChild(style);
     }
@@ -164,11 +173,26 @@ class ChatWidget {
         };
     }
     initEvents() {
-        this.elements.toggleBtn.addEventListener('click', () => this.toggleChat());
-        this.elements.closeBtn.addEventListener('click', () => this.closeChat());
-        this.elements.sendBtn.addEventListener('click', () => this.sendMessage());
-        this.elements.voiceBtn.addEventListener('click', () => this.startVoiceRecording());
-        this.elements.fileBtn.addEventListener('click', () => this.uploadFile());
+        this.elements.toggleBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.toggleChat();
+        });
+        this.elements.closeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.closeChat();
+        });
+        this.elements.sendBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.sendMessage();
+        });
+        this.elements.voiceBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.startVoiceRecording();
+        });
+        this.elements.fileBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.uploadFile();
+        });
         this.elements.messageInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
@@ -176,10 +200,31 @@ class ChatWidget {
             }
         });
         this.elements.messageInput.addEventListener('input', () => this.resizeTextarea());
-        this.elements.humanSupportBtn.addEventListener('click', () => this.connectToHuman());
+        this.elements.humanSupportBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.connectToHuman();
+        });
+        
+        // جلوگیری از کلیک روی پنجره چت بسته
+        this.elements.chatWindow.addEventListener('click', (e) => {
+            if (!this.state.isOpen) {
+                e.stopPropagation();
+            }
+        });
+        
+        // بستن پنجره با کلیک بیرون
         document.addEventListener('click', (e) => {
-            if (this.state.isOpen && !this.elements.chatWindow.contains(e.target) && !this.elements.toggleBtn.contains(e.target)) {
+            if (this.state.isOpen && 
+                !this.elements.chatWindow.contains(e.target) && 
+                !this.elements.toggleBtn.contains(e.target)) {
                 this.closeChat();
+            }
+        });
+        
+        // جلوگیری از انتشار رویداد روی پنجره چت
+        this.elements.chatWindow.addEventListener('click', (e) => {
+            if (this.state.isOpen) {
+                e.stopPropagation();
             }
         });
     }
@@ -220,10 +265,12 @@ class ChatWidget {
     }
     toggleChat() {
         this.state.isOpen = !this.state.isOpen;
-        this.elements.chatWindow.classList.toggle('active');
         if (this.state.isOpen) {
+            this.elements.chatWindow.classList.add('active');
             this.elements.messageInput.focus();
             this.resetNotification(); // مهم: وقتی باز کرد، نوتیفیکیشن صفر بشه
+        } else {
+            this.elements.chatWindow.classList.remove('active');
         }
     }
     closeChat() {
