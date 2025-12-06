@@ -24,14 +24,18 @@ class ChatWidget {
             recordingTimer: null,
             audioStream: null,
             recordingTime: 0,
-            chatHistoryLoaded: false
+            chatHistoryLoaded: false,
+            // وضعیت صف
+            isInQueue: false,
+            queuePosition: 0,
+            totalInQueue: 0,
+            estimatedWaitTime: 0
         };
-        // برای چشمک زدن تب و صدا
+        
         this.tabNotificationInterval = null;
         this.originalTitle = document.title;
         this.tabNotifyText = 'پیام جدید از پشتیبانی';
         
-        // بایندرها برای مدیریت رویدادها
         this.handleVoiceMouseDown = this.handleVoiceMouseDown.bind(this);
         this.handleVoiceMouseUp = this.handleVoiceMouseUp.bind(this);
         this.handleVoiceTouchStart = this.handleVoiceTouchStart.bind(this);
@@ -68,7 +72,7 @@ class ChatWidget {
             link.crossOrigin = 'anonymous';
             document.head.appendChild(link);
         }
-        // اضافه کردن انیمیشن pulse برای دکمه
+        
         const style = document.createElement('style');
         style.textContent = `
             @keyframes pulse {
@@ -80,6 +84,10 @@ class ChatWidget {
                 0% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0.7); }
                 70% { box-shadow: 0 0 0 10px rgba(255, 0, 0, 0); }
                 100% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0); }
+            }
+            @keyframes fadeIn {
+                from { opacity: 0; transform: translateY(10px); }
+                to { opacity: 1; transform: translateY(0); }
             }
             .chat-toggle-btn.pulse {
                 animation: pulse 0.6s ease-in-out;
@@ -101,7 +109,6 @@ class ChatWidget {
                 border: 2px solid white;
                 box-shadow: 0 2px 8px rgba(0,0,0,0.3);
             }
-            /* رفع مشکل تداخل */
             .chat-window {
                 display: none;
             }
@@ -110,7 +117,6 @@ class ChatWidget {
                 opacity: 1;
                 transform: translateY(0) scale(1);
             }
-            /* استایل برای دکمه‌های مخفی */
             .voice-btn,
             .file-btn {
                 display: none;
@@ -124,7 +130,6 @@ class ChatWidget {
                 opacity: 1;
                 transform: scale(1);
             }
-            /* استایل برای حالت ضبط */
             .voice-btn.recording {
                 background: linear-gradient(145deg, #ff0000, #cc0000) !important;
                 animation: recordingPulse 1.5s infinite;
@@ -154,13 +159,11 @@ class ChatWidget {
             .recording-time {
                 font-family: monospace;
             }
-            /* استایل برای حالت غیرفعال */
             .voice-btn:disabled,
             .file-btn:disabled {
                 opacity: 0.5;
                 cursor: not-allowed;
             }
-            /* دستورالعمل ضبط */
             .record-instruction {
                 display: none;
                 text-align: center;
@@ -174,7 +177,6 @@ class ChatWidget {
             .record-instruction.active {
                 display: block;
             }
-            /* استایل برای Font Awesome */
             .fa-spinner {
                 animation: spin 1s linear infinite;
             }
@@ -182,7 +184,6 @@ class ChatWidget {
                 0% { transform: rotate(0deg); }
                 100% { transform: rotate(360deg); }
             }
-            /* استایل برای لینک‌های قابل کلیک */
             .chat-link {
                 color: #0066cc;
                 text-decoration: underline;
@@ -192,7 +193,6 @@ class ChatWidget {
                 color: #004499;
                 text-decoration: none;
             }
-            /* استایل برای پیام‌های سیستمی مدیریت چت */
             .chat-management-message {
                 background: linear-gradient(145deg, #f8f9fa, #e9ecef) !important;
                 border: 1px solid #dee2e6 !important;
@@ -202,25 +202,145 @@ class ChatWidget {
                 color: #495057 !important;
                 font-weight: 500 !important;
             }
+            /* استایل صف انتظار */
+            .queue-status {
+                display: none;
+                background: linear-gradient(145deg, #fff3cd, #ffeaa7);
+                border: 1px solid #ffc107;
+                border-radius: 10px;
+                padding: 12px;
+                margin: 10px 0;
+                animation: fadeIn 0.5s ease;
+            }
+            .queue-status.active {
+                display: block;
+            }
+            .queue-info {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                margin-bottom: 8px;
+            }
+            .queue-icon {
+                font-size: 20px;
+                color: #ff9800;
+            }
+            .queue-position {
+                font-size: 18px;
+                font-weight: bold;
+                color: #333;
+            }
+            .queue-details {
+                font-size: 13px;
+                color: #666;
+            }
+            .leave-queue-btn {
+                background: #95a5a6;
+                color: white;
+                border: none;
+                border-radius: 8px;
+                padding: 8px 16px;
+                font-size: 14px;
+                cursor: pointer;
+                margin-top: 10px;
+                width: 100%;
+                transition: background 0.3s;
+                font-family: inherit;
+            }
+            .leave-queue-btn:hover {
+                background: #7f8c8d;
+            }
+            /* استایل جدید برای دکمه شناور */
+            .floating-widget-container {
+                position: fixed;
+                z-index: 999999;
+                ${this.options.position === 'bottom-right' ? 'right: 20px; left: auto;' : 'left: 20px; right: auto;'}
+                ${this.options.position.includes('bottom') ? 'bottom: 20px; top: auto;' : 'top: 20px; bottom: auto;'}
+                display: flex;
+                flex-direction: column;
+                align-items: ${this.options.position.includes('right') ? 'flex-end' : 'flex-start'};
+                gap: 10px;
+            }
+            .floating-message {
+                background: white;
+                color: #333;
+                padding: 12px 16px;
+                border-radius: 12px;
+                box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+                font-size: 14px;
+                font-weight: 500;
+                max-width: 250px;
+                animation: fadeIn 0.5s ease;
+                border-right: 4px solid #3498db;
+                display: none;
+            }
+            .floating-message.active {
+                display: block;
+            }
+            .chat-toggle-btn {
+                width: 60px;
+                height: 60px;
+                border-radius: 50%;
+                background: linear-gradient(145deg, #3498db, #2980b9);
+                border: none;
+                color: white;
+                font-size: 24px;
+                cursor: pointer;
+                box-shadow: 0 4px 15px rgba(52, 152, 219, 0.3);
+                transition: all 0.3s ease;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                position: relative;
+            }
+            .chat-toggle-btn:hover {
+                transform: scale(1.05);
+                box-shadow: 0 6px 20px rgba(52, 152, 219, 0.4);
+            }
+            .chat-toggle-btn i {
+                transition: transform 0.3s ease;
+            }
+            .chat-toggle-btn:hover i {
+                transform: scale(1.1);
+            }
         `;
         document.head.appendChild(style);
     }
 
     injectHTML() {
         this.container = document.createElement('div');
-        this.container.className = 'chat-widget';
+        this.container.className = 'floating-widget-container';
         this.container.innerHTML = `
+            <div class="floating-message">
+                <div class="welcome-text">
+                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                        <i class="fas fa-comments" style="color: #3498db;"></i>
+                        <strong style="font-size: 15px;">سلام!</strong>
+                    </div>
+                    <div style="font-size: 13px; line-height: 1.5;">
+                        چطور می‌تونم کمکتون کنم؟ 😊
+                    </div>
+                </div>
+            </div>
             <button class="chat-toggle-btn">
-                <i class="fas fa-comment-dots"></i>
+                <img src="https://shikpooshaan.ir/widjet.logo.png" 
+                     alt="پشتیبانی شیک‌پوشان" 
+                     style="width: 32px; height: 32px; border-radius: 50%; object-fit: cover;"
+                     onerror="this.style.display='none'; this.parentNode.innerHTML='<i class=\\'fas fa-headset\\'></i>'">
                 <span class="notification-badge" style="display: none">0</span>
             </button>
             <div class="chat-window">
                 <div class="chat-header">
                     <div class="header-left">
-                        <div class="chat-logo"><i class="fas fa-headset"></i></div>
+                        <div class="chat-logo">
+                            <img src="https://shikpooshaan.ir/widjet.logo.png" 
+                                 alt="شیک‌پوشان"
+                                 style="width: 40px; height: 40px; border-radius: 50%; object-fit: cover;"
+                                 onerror="this.style.display='none'; this.parentNode.innerHTML='<i class=\\'fas fa-headset\\'></i>'">
+                        </div>
                         <div class="chat-title">
-                            <h3>پشتیبان هوشمند</h3>
-                            <p>پاسخگوی سوالات شما</p>
+                            <h3>پشتیبان شیک‌پوشان</h3>
+                            <p>در خدمت شما هستیم</p>
                         </div>
                     </div>
                     <div class="header-right">
@@ -231,6 +351,21 @@ class ChatWidget {
                         <button class="close-btn"><i class="fas fa-times"></i></button>
                     </div>
                 </div>
+                
+                <div class="queue-status">
+                    <div class="queue-info">
+                        <div class="queue-icon"><i class="fas fa-clock"></i></div>
+                        <div class="queue-position">موقعیت شما: <span id="queue-position">1</span></div>
+                    </div>
+                    <div class="queue-details">
+                        <div>🕐 تخمین زمان: <span id="queue-time">2</span> دقیقه</div>
+                        <div>👥 افراد در صف: <span id="queue-total">0</span> نفر</div>
+                    </div>
+                    <button class="leave-queue-btn">
+                        <i class="fas fa-sign-out-alt"></i> ترک صف
+                    </button>
+                </div>
+                
                 <div class="chat-messages">
                     <div class="message system">
                         <div class="message-text">
@@ -239,18 +374,21 @@ class ChatWidget {
                         <div class="message-time">همین الان</div>
                     </div>
                 </div>
+                
                 <div class="connection-status">
                     <div class="status-message">
                         <i class="fas fa-wifi"></i>
                         <span>در حال اتصال...</span>
                     </div>
                 </div>
+                
                 <div class="typing-indicator">
                     <div class="typing-dots">
                         <span></span><span></span><span></span>
                     </div>
                     <span>در حال تایپ...</span>
                 </div>
+                
                 <div class="operator-info">
                     <div class="operator-card">
                         <div class="operator-avatar"><i class="fas fa-user-tie"></i></div>
@@ -260,6 +398,7 @@ class ChatWidget {
                         </div>
                     </div>
                 </div>
+                
                 <div class="chat-input-area">
                     <div class="record-instruction">
                         برای ضبط صدا، دکمه میکروفون را نگه دارید و رها کنید تا ارسال شود
@@ -287,6 +426,7 @@ class ChatWidget {
             </div>
         `;
         document.body.appendChild(this.container);
+        
         this.elements = {
             toggleBtn: this.container.querySelector('.chat-toggle-btn'),
             chatWindow: this.container.querySelector('.chat-window'),
@@ -304,8 +444,34 @@ class ChatWidget {
             chatStatus: this.container.querySelector('.chat-status'),
             recordingIndicator: this.container.querySelector('.recording-indicator'),
             recordingTime: this.container.querySelector('.recording-time'),
-            recordInstruction: this.container.querySelector('.record-instruction')
+            recordInstruction: this.container.querySelector('.record-instruction'),
+            queueStatus: this.container.querySelector('.queue-status'),
+            queuePosition: this.container.querySelector('#queue-position'),
+            queueTime: this.container.querySelector('#queue-time'),
+            queueTotal: this.container.querySelector('#queue-total'),
+            leaveQueueBtn: this.container.querySelector('.leave-queue-btn'),
+            floatingMessage: this.container.querySelector('.floating-message')
         };
+        
+        this.showFloatingMessage();
+    }
+
+    showFloatingMessage() {
+        setTimeout(() => {
+            this.elements.floatingMessage.classList.add('active');
+            
+            setTimeout(() => {
+                this.elements.floatingMessage.classList.remove('active');
+            }, 8000);
+        }, 1000);
+        
+        this.elements.toggleBtn.addEventListener('mouseenter', () => {
+            this.elements.floatingMessage.classList.add('active');
+        });
+        
+        this.elements.toggleBtn.addEventListener('mouseleave', () => {
+            this.elements.floatingMessage.classList.remove('active');
+        });
     }
 
     initEvents() {
@@ -313,16 +479,17 @@ class ChatWidget {
             e.stopPropagation();
             this.toggleChat();
         });
+        
         this.elements.closeBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             this.closeChat();
         });
+        
         this.elements.sendBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             this.sendMessage();
         });
         
-        // رویدادهای دکمه ویس
         this.elements.voiceBtn.addEventListener('mousedown', this.handleVoiceMouseDown);
         this.elements.voiceBtn.addEventListener('mouseup', this.handleVoiceMouseUp);
         this.elements.voiceBtn.addEventListener('mouseleave', this.handleVoiceMouseLeave);
@@ -330,7 +497,6 @@ class ChatWidget {
         this.elements.voiceBtn.addEventListener('touchend', this.handleVoiceTouchEnd);
         this.elements.voiceBtn.addEventListener('touchcancel', this.handleVoiceTouchEnd);
         
-        // برای جلوگیری از کلیک راست روی دکمه ویس
         this.elements.voiceBtn.addEventListener('contextmenu', (e) => {
             e.preventDefault();
             return false;
@@ -347,20 +513,19 @@ class ChatWidget {
                 this.sendMessage();
             }
         });
+        
         this.elements.messageInput.addEventListener('input', () => this.resizeTextarea());
+        
         this.elements.humanSupportBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             this.connectToHuman();
         });
         
-        // جلوگیری از کلیک روی پنجره چت بسته
-        this.elements.chatWindow.addEventListener('click', (e) => {
-            if (!this.state.isOpen) {
-                e.stopPropagation();
-            }
+        this.elements.leaveQueueBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.leaveQueue();
         });
         
-        // بستن پنجره با کلیک بیرون
         document.addEventListener('click', (e) => {
             if (this.state.isOpen && 
                 !this.elements.chatWindow.contains(e.target) && 
@@ -369,14 +534,6 @@ class ChatWidget {
             }
         });
         
-        // جلوگیری از انتشار رویداد روی پنجره چت
-        this.elements.chatWindow.addEventListener('click', (e) => {
-            if (this.state.isOpen) {
-                e.stopPropagation();
-            }
-        });
-        
-        // اضافه کردن event listener برای release در سطح document
         document.addEventListener('mouseup', (e) => {
             if (this.state.isRecording && e.button === 0) {
                 this.handleVoiceMouseUp();
@@ -388,45 +545,6 @@ class ChatWidget {
                 this.handleVoiceTouchEnd();
             }
         });
-    }
-
-    // تابع‌های هندلر برای ضبط صدا
-    handleVoiceMouseDown(e) {
-        e.stopPropagation();
-        e.preventDefault();
-        this.startVoiceRecording();
-    }
-
-    handleVoiceMouseUp(e) {
-        if (e) {
-            e.stopPropagation();
-            e.preventDefault();
-        }
-        if (this.state.isRecording) {
-            this.stopVoiceRecording();
-        }
-    }
-
-    handleVoiceMouseLeave(e) {
-        if (this.state.isRecording) {
-            this.stopVoiceRecording();
-        }
-    }
-
-    handleVoiceTouchStart(e) {
-        e.stopPropagation();
-        e.preventDefault();
-        this.startVoiceRecording();
-    }
-
-    handleVoiceTouchEnd(e) {
-        if (e) {
-            e.stopPropagation();
-            e.preventDefault();
-        }
-        if (this.state.isRecording) {
-            this.stopVoiceRecording();
-        }
     }
 
     connectWebSocket() {
@@ -464,7 +582,6 @@ class ChatWidget {
                 this.addMessage('system', data.message || 'پیام صوتی با موفقیت ارسال شد.');
             });
             
-            // رویدادهای جدید برای مدیریت چت
             this.state.socket.on('chat-history-loaded', (data) => {
                 this.loadChatHistoryFromServer(data.history);
             });
@@ -483,6 +600,19 @@ class ChatWidget {
             
             this.state.socket.on('ai-message', (data) => {
                 this.addMessage('assistant', data.message);
+            });
+            
+            // رویدادهای جدید برای سیستم نوبت‌دهی
+            this.state.socket.on('operator-busy', (data) => {
+                this.handleOperatorBusy(data);
+            });
+            
+            this.state.socket.on('queue-update', (data) => {
+                this.updateQueueStatus(data);
+            });
+            
+            this.state.socket.on('left-queue', (data) => {
+                this.handleLeftQueue(data.message);
             });
             
             this.state.socket.on('disconnect', () => {
@@ -522,10 +652,8 @@ class ChatWidget {
             const data = await response.json();
             
             if (data.success && data.history && data.history.length > 0) {
-                // پاک کردن پیام اولیه
                 this.elements.messagesContainer.innerHTML = '';
                 
-                // بارگذاری تاریخچه کامل
                 data.history.forEach(item => {
                     let type = 'system';
                     if (item.role === 'user') type = 'user';
@@ -538,7 +666,6 @@ class ChatWidget {
                 this.state.chatHistoryLoaded = true;
                 console.log(`✅ تاریخچه چت بارگذاری شد (${data.history.length} پیام)`);
                 
-                // اگر اپراتور متصل بود، دکمه‌ها را فعال کن
                 if (data.connectedToHuman) {
                     this.state.operatorConnected = true;
                     this.elements.operatorInfo.classList.add('active');
@@ -562,10 +689,8 @@ class ChatWidget {
     loadChatHistoryFromServer(history) {
         if (this.state.chatHistoryLoaded || !history || history.length === 0) return;
         
-        // پاک کردن پیام‌های موجود
         this.elements.messagesContainer.innerHTML = '';
         
-        // بارگذاری تاریخچه کامل
         history.forEach(item => {
             let type = 'system';
             if (item.role === 'user') type = 'user';
@@ -621,14 +746,11 @@ class ChatWidget {
                 break;
         }
         
-        // فرمت‌بندی متن (تبدیل خطوط جدید و تشخیص لینک)
         let formattedText = this.escapeHtml(text);
         formattedText = formattedText.replace(/\n/g, '<br>');
         
-        // تبدیل لینک‌ها به تگ <a>
         const urlRegex = /(https?:\/\/[^\s]+)/g;
         formattedText = formattedText.replace(urlRegex, (url) => {
-            // حذف کاراکترهای پایان جمله از انتهای لینک
             const cleanUrl = url.replace(/[.,;!?]$/, '');
             const displayUrl = cleanUrl.length > 50 ? cleanUrl.substring(0, 47) + '...' : cleanUrl;
             return `<a href="${cleanUrl}" target="_blank" rel="noopener noreferrer" class="chat-link">${displayUrl}</a>${url.slice(cleanUrl.length)}`;
@@ -644,12 +766,86 @@ class ChatWidget {
         this.state.messages.push({ type, text, time });
     }
 
+    handleOperatorBusy(data) {
+        this.state.isInQueue = true;
+        this.state.queuePosition = data.position;
+        this.state.totalInQueue = data.totalInQueue;
+        this.state.estimatedWaitTime = data.position * 2;
+        
+        this.updateQueueDisplay();
+        
+        this.addMessage('system', data.message);
+        
+        this.elements.queueStatus.classList.add('active');
+        
+        this.elements.humanSupportBtn.innerHTML = 
+            `<i class="fas fa-clock"></i> در صف انتظار (موقعیت: ${data.position})`;
+        this.elements.humanSupportBtn.style.background = '#ff9500';
+        this.elements.humanSupportBtn.disabled = false;
+    }
+
+    updateQueueStatus(data) {
+        if (!this.state.isInQueue) return;
+        
+        this.state.queuePosition = data.position;
+        this.state.totalInQueue = data.totalInQueue;
+        this.state.estimatedWaitTime = data.estimatedTime;
+        
+        this.updateQueueDisplay();
+        
+        this.elements.humanSupportBtn.innerHTML = 
+            `<i class="fas fa-clock"></i> در صف انتظار (موقعیت: ${data.position})`;
+    }
+
+    updateQueueDisplay() {
+        this.elements.queuePosition.textContent = this.state.queuePosition;
+        this.elements.queueTime.textContent = this.state.estimatedWaitTime;
+        this.elements.queueTotal.textContent = this.state.totalInQueue;
+    }
+
+    handleLeftQueue(message) {
+        this.state.isInQueue = false;
+        this.elements.queueStatus.classList.remove('active');
+        
+        this.addMessage('system', message);
+        
+        this.resetHumanSupportButton();
+    }
+
+    async leaveQueue() {
+        if (!this.state.isInQueue) return;
+        
+        try {
+            const response = await fetch(`${this.options.backendUrl}/api/leave-queue`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sessionId: this.state.sessionId })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                this.state.isInQueue = false;
+                this.elements.queueStatus.classList.remove('active');
+                
+                this.addMessage('system', 'شما از صف انتظار خارج شدید.');
+                
+                this.resetHumanSupportButton();
+                
+                if (this.state.socket) {
+                    this.state.socket.emit('leave-queue', this.state.sessionId);
+                }
+            }
+        } catch (error) {
+            console.error('Error leaving queue:', error);
+            this.addMessage('system', 'خطا در ترک صف. لطفاً دوباره تلاش کنید.');
+        }
+    }
+
     handleChatCleared(message) {
-        // پاک کردن همه پیام‌ها
         this.elements.messagesContainer.innerHTML = '';
         this.state.messages = [];
         
-        // اضافه کردن پیام سیستم
         const messageEl = document.createElement('div');
         messageEl.className = 'message system chat-management-message';
         messageEl.innerHTML = `
@@ -660,23 +856,19 @@ class ChatWidget {
         
         this.elements.messagesContainer.appendChild(messageEl);
         
-        // ریست کردن وضعیت
         this.state.operatorConnected = false;
         this.elements.operatorInfo.classList.remove('active');
         this.elements.voiceBtn.classList.remove('active');
         this.elements.fileBtn.classList.remove('active');
         this.elements.recordInstruction.classList.remove('active');
         
-        // ریست کردن دکمه اتصال به اپراتور
         this.resetHumanSupportButton();
         
-        // صدا و نوتیفیکیشن
         this.playNotificationSound();
         this.showNotification();
     }
 
     handleChatClosed(message) {
-        // اضافه کردن پیام بستن چت
         const messageEl = document.createElement('div');
         messageEl.className = 'message system chat-management-message';
         messageEl.innerHTML = `
@@ -688,38 +880,31 @@ class ChatWidget {
         this.elements.messagesContainer.appendChild(messageEl);
         this.state.messages.push({ type: 'system', text: message });
         
-        // ریست کردن وضعیت اتصال
         this.state.operatorConnected = false;
         this.elements.operatorInfo.classList.remove('active');
         this.elements.voiceBtn.classList.remove('active');
         this.elements.fileBtn.classList.remove('active');
         this.elements.recordInstruction.classList.remove('active');
         
-        // ریست کردن دکمه اتصال به اپراتور
         this.resetHumanSupportButton();
         
-        // اسکرول به پایین
         setTimeout(() => {
             this.elements.messagesContainer.scrollTop = this.elements.messagesContainer.scrollHeight;
         }, 100);
         
-        // صدا و نوتیفیکیشن
         this.playNotificationSound();
         this.showNotification();
     }
 
     handleOperatorDisconnected(message) {
-        // اضافه کردن پیام
         this.addMessage('system', message);
         
-        // ریست کردن وضعیت
         this.state.operatorConnected = false;
         this.elements.operatorInfo.classList.remove('active');
         this.elements.voiceBtn.classList.remove('active');
         this.elements.fileBtn.classList.remove('active');
         this.elements.recordInstruction.classList.remove('active');
         
-        // ریست کردن دکمه اتصال به اپراتور
         this.resetHumanSupportButton();
     }
 
@@ -727,21 +912,22 @@ class ChatWidget {
         this.state.operatorConnected = true;
         this.elements.operatorInfo.classList.add('active');
         
-        // فعال کردن دکمه‌های ویس و فایل
         this.elements.voiceBtn.classList.add('active');
         this.elements.fileBtn.classList.add('active');
         
-        // نمایش دستورالعمل ضبط
         this.elements.recordInstruction.classList.add('active');
         
         this.addMessage('system', data.message || '🎉 اپراتور متصل شد!');
         
-        // به‌روزرسانی دکمه اتصال
         this.elements.humanSupportBtn.innerHTML = `<i class="fas fa-user-check"></i> متصل به اپراتور`;
         this.elements.humanSupportBtn.style.background = 'linear-gradient(145deg, #2ecc71, #27ae60)';
         this.elements.humanSupportBtn.disabled = true;
         
-        // پیام اضافه برای اطلاع کاربر
+        if (this.state.isInQueue) {
+            this.state.isInQueue = false;
+            this.elements.queueStatus.classList.remove('active');
+        }
+        
         this.addMessage('system', '🎤 حالا می‌توانید فایل و پیام صوتی نیز ارسال کنید.');
     }
 
@@ -752,7 +938,6 @@ class ChatWidget {
             this.elements.messageInput.focus();
             this.resetNotification();
             
-            // اگر تاریخچه بارگذاری نشده، بارگذاری کن
             if (!this.state.chatHistoryLoaded) {
                 this.loadChatHistory();
             }
@@ -816,10 +1001,6 @@ class ChatWidget {
             const data = await response.json();
             if (data.success) {
                 this.addMessage('assistant', data.message);
-                if (data.requiresHuman) {
-                    this.elements.humanSupportBtn.innerHTML = `<i class="fas fa-user-headset"></i> اتصال به اپراتور انسانی (پیشنهاد سیستم)`;
-                    this.elements.humanSupportBtn.style.background = '#ff9500';
-                }
             }
         } catch (error) {
             this.addMessage('system', 'خطا در ارتباط با سرور');
@@ -827,10 +1008,12 @@ class ChatWidget {
     }
 
     async connectToHuman() {
-        if (this.state.operatorConnected || this.state.isConnecting) return;
+        if (this.state.operatorConnected || this.state.isConnecting || this.state.isInQueue) return;
+        
         this.state.isConnecting = true;
         this.elements.humanSupportBtn.disabled = true;
         this.elements.humanSupportBtn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> در حال اتصال...`;
+        
         try {
             const userInfo = { 
                 name: 'کاربر سایت', 
@@ -844,16 +1027,40 @@ class ChatWidget {
                     userInfo 
                 })
             });
+            
             const data = await res.json();
+            
             if (data.success) {
-                this.addMessage('system', data.message);
-                this.elements.humanSupportBtn.innerHTML = `<i class="fas fa-clock"></i> در انتظار پذیرش اپراتور`;
-                this.elements.humanSupportBtn.style.background = '#ff9500';
-                this.elements.humanSupportBtn.disabled = true;
+                if (data.waiting) {
+                    this.state.isInQueue = true;
+                    this.state.queuePosition = data.position;
+                    this.state.totalInQueue = data.totalInQueue;
+                    this.state.estimatedWaitTime = data.position * 2;
+                    
+                    this.updateQueueDisplay();
+                    
+                    this.addMessage('system', data.message + ` موقعیت شما در صف: ${data.position}`);
+                    
+                    this.elements.humanSupportBtn.innerHTML = 
+                        `<i class="fas fa-clock"></i> در صف انتظار (موقعیت: ${data.position})`;
+                    this.elements.humanSupportBtn.style.background = '#ff9500';
+                    this.elements.humanSupportBtn.disabled = false;
+                    
+                    this.elements.queueStatus.classList.add('active');
+                    
+                } else if (data.connected) {
+                    this.handleOperatorConnected({ 
+                        message: data.message,
+                        autoConnected: true 
+                    });
+                }
             } else {
+                this.addMessage('system', 'خطا در اتصال به اپراتور');
                 this.resetHumanSupportButton();
             }
+            
         } catch (err) {
+            console.error('Error connecting to human:', err);
             this.addMessage('system', 'خطا در اتصال به اپراتور');
             this.resetHumanSupportButton();
         } finally {
@@ -863,12 +1070,49 @@ class ChatWidget {
 
     resetHumanSupportButton() {
         this.elements.humanSupportBtn.innerHTML = `<i class="fas fa-user-headset"></i> اتصال به اپراتور انسانی`;
-        this.elements.humanSupportBtn.style.background = '#ff6b6b';
+        this.elements.humanSupportBtn.style.background = 'linear-gradient(145deg, #ff6b6b, #ee5a52)';
         this.elements.humanSupportBtn.disabled = false;
     }
     
+    handleVoiceMouseDown(e) {
+        e.stopPropagation();
+        e.preventDefault();
+        this.startVoiceRecording();
+    }
+
+    handleVoiceMouseUp(e) {
+        if (e) {
+            e.stopPropagation();
+            e.preventDefault();
+        }
+        if (this.state.isRecording) {
+            this.stopVoiceRecording();
+        }
+    }
+
+    handleVoiceMouseLeave(e) {
+        if (this.state.isRecording) {
+            this.stopVoiceRecording();
+        }
+    }
+
+    handleVoiceTouchStart(e) {
+        e.stopPropagation();
+        e.preventDefault();
+        this.startVoiceRecording();
+    }
+
+    handleVoiceTouchEnd(e) {
+        if (e) {
+            e.stopPropagation();
+            e.preventDefault();
+        }
+        if (this.state.isRecording) {
+            this.stopVoiceRecording();
+        }
+    }
+    
     async startVoiceRecording() {
-        // فقط اگر اپراتور متصل است
         if (!this.state.operatorConnected) {
             this.addMessage('system', 'برای ارسال پیام صوتی ابتدا به اپراتور انسانی متصل شوید.');
             return;
@@ -877,10 +1121,8 @@ class ChatWidget {
         if (this.state.isRecording) return;
         
         try {
-            // متوقف کردن استریم قبلی اگر وجود دارد
             this.stopAudioStream();
             
-            // درخواست دسترسی به میکروفون
             const stream = await navigator.mediaDevices.getUserMedia({ 
                 audio: {
                     echoCancellation: true,
@@ -896,11 +1138,9 @@ class ChatWidget {
             this.state.recordingStartTime = Date.now();
             this.state.recordingTime = 0;
             
-            // فرمت MP3 برای تلگرام
             let mimeType = 'audio/mpeg';
             let fileExtension = '.mp3';
             
-            // چک فرمت مرورگر
             if (MediaRecorder.isTypeSupported('audio/mpeg')) {
                 mimeType = 'audio/mpeg';
                 fileExtension = '.mp3';
@@ -917,7 +1157,6 @@ class ChatWidget {
             
             console.log('Selected audio format for Telegram:', mimeType, 'extension:', fileExtension);
             
-            // ایجاد MediaRecorder
             const options = { 
                 mimeType: mimeType,
                 audioBitsPerSecond: 64000
@@ -925,31 +1164,25 @@ class ChatWidget {
             
             this.state.mediaRecorder = new MediaRecorder(stream, options);
             
-            // ذخیره داده‌های ضبط شده
             this.state.mediaRecorder.ondataavailable = (event) => {
                 if (event.data.size > 0) {
                     this.state.audioChunks.push(event.data);
                 }
             };
             
-            // وقتی ضبط تمام شد
             this.state.mediaRecorder.onstop = async () => {
                 await this.finishVoiceRecording(fileExtension);
             };
             
-            // شروع ضبط
             this.state.mediaRecorder.start(250);
             
-            // تغییر ظاهر دکمه
             this.elements.voiceBtn.classList.add('recording');
             this.elements.recordingIndicator.classList.add('active');
             this.elements.recordInstruction.textContent = 'در حال ضبط... رها کنید تا ارسال شود';
             this.elements.voiceBtn.innerHTML = '<i class="fas fa-stop"></i>';
             
-            // شروع تایمر
             this.startRecordingTimer();
             
-            // غیرفعال کردن سایر دکمه‌ها
             this.elements.fileBtn.disabled = true;
             this.elements.sendBtn.disabled = true;
             this.state.isTyping = true;
@@ -976,24 +1209,19 @@ class ChatWidget {
         
         console.log('Stopping recording...');
         
-        // متوقف کردن ضبط
         if (this.state.mediaRecorder.state === 'recording') {
             this.state.mediaRecorder.stop();
         }
         
-        // متوقف کردن تایمر
         this.stopRecordingTimer();
         
-        // توقف استریم صدا
         this.stopAudioStream();
         
-        // بازگرداندن ظاهر دکمه
         this.elements.voiceBtn.classList.remove('recording');
         this.elements.recordingIndicator.classList.remove('active');
         this.elements.recordInstruction.textContent = 'برای ضبط صدا، دکمه میکروفون را نگه دارید و رها کنید تا ارسال شود';
         this.elements.voiceBtn.innerHTML = '<i class="fas fa-microphone"></i>';
         
-        // فعال کردن سایر دکمه‌ها
         this.elements.fileBtn.disabled = false;
         this.elements.sendBtn.disabled = false;
         this.state.isTyping = false;
@@ -1019,7 +1247,6 @@ class ChatWidget {
                 this.elements.recordingTime.textContent = 
                     `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
                 
-                // محدودیت زمانی برای ضبط (3 دقیقه)
                 if (this.state.recordingTime >= 180) {
                     this.addMessage('system', '⏰ حداکثر زمان ضبط (۳ دقیقه) به پایان رسید.');
                     this.stopVoiceRecording();
@@ -1049,16 +1276,13 @@ class ChatWidget {
             return;
         }
         
-        // ایجاد فایل صوتی
         const mimeType = this.state.mediaRecorder?.mimeType || 'audio/mpeg';
         const audioBlob = new Blob(this.state.audioChunks, { type: mimeType });
         const duration = this.state.recordingTime;
         
-        // نمایش پیام در چت
         this.addMessage('user', `🎤 پیام صوتی (${duration} ثانیه)`);
         
         try {
-            // بررسی حجم فایل
             if (audioBlob.size > 20 * 1024 * 1024) {
                 this.addMessage('system', '❌ پیام صوتی بسیار بزرگ است (بیشتر از 20 مگابایت).');
                 this.state.isRecording = false;
@@ -1075,14 +1299,11 @@ class ChatWidget {
                 return;
             }
             
-            // تبدیل به base64
             const base64 = await this.blobToBase64(audioBlob);
             
-            // تعیین نام فایل
             const timestamp = Date.now();
             const fileName = `voice_${timestamp}${fileExtension}`;
             
-            // ارسال از طریق WebSocket
             if (this.state.socket && this.state.operatorConnected) {
                 this.state.socket.emit('user-voice', {
                     sessionId: this.state.sessionId,
@@ -1107,7 +1328,6 @@ class ChatWidget {
                     name: fileName
                 });
                 
-                // پیام تایید
                 this.addMessage('system', '✅ پیام صوتی برای ارسال به تلگرام آماده شد.');
             } else {
                 this.addMessage('system', '❌ اتصال به سرور برقرار نیست.');
@@ -1118,14 +1338,12 @@ class ChatWidget {
             this.addMessage('system', '❌ خطا در ارسال پیام صوتی.');
         }
         
-        // پاکسازی
         this.state.isRecording = false;
         this.state.audioChunks = [];
         this.state.mediaRecorder = null;
         this.state.recordingTime = 0;
     }
     
-    // تابع کمکی برای تبدیل blob به base64
     blobToBase64(blob) {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
@@ -1136,7 +1354,6 @@ class ChatWidget {
     }
     
     uploadFile() {
-        // فقط اگر اپراتور متصل است
         if (!this.state.operatorConnected) {
             this.addMessage('system', 'برای ارسال فایل ابتدا به اپراتور انسانی متصل شوید.');
             return;
@@ -1156,24 +1373,19 @@ class ChatWidget {
     }
     
     async processFileUpload(file) {
-        // چک کردن حجم فایل
         const MAX_SIZE = 50 * 1024 * 1024;
         if (file.size > MAX_SIZE) {
             this.addMessage('system', `❌ فایل "${file.name}" بسیار بزرگ است (حداکثر 50 مگابایت)`);
             return;
         }
         
-        // نمایش فایل در چت
         this.addMessage('user', `📎 ارسال فایل: ${file.name} (${this.formatFileSize(file.size)})`);
         
-        // نمایش پیام در حال آپلود
         this.addMessage('system', `⏳ در حال آپلود فایل "${file.name}"...`);
         
         try {
-            // تبدیل به base64
             const base64 = await this.fileToBase64(file);
             
-            // ارسال از طریق WebSocket
             if (this.state.socket && this.state.operatorConnected) {
                 this.state.socket.emit('user-file', {
                     sessionId: this.state.sessionId,
@@ -1195,7 +1407,6 @@ class ChatWidget {
                     type: file.type
                 });
                 
-                // پیام تایید
                 this.addMessage('system', '✅ فایل برای ارسال به تلگرام آماده شد.');
             } else {
                 this.addMessage('system', '❌ اتصال به سرور برقرار نیست.');
@@ -1207,7 +1418,6 @@ class ChatWidget {
         }
     }
     
-    // تابع کمکی برای تبدیل فایل به base64
     fileToBase64(file) {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
@@ -1225,7 +1435,6 @@ class ChatWidget {
         return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
     }
     
-    // صدا + نوتیفیکیشن + چشمک تب
     playNotificationSound() {
         try {
             const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -1306,11 +1515,9 @@ class ChatWidget {
                 break;
         }
         
-        // فرمت‌بندی متن
         let formattedText = this.escapeHtml(text);
         formattedText = formattedText.replace(/\n/g, '<br>');
         
-        // تبدیل لینک‌ها
         const urlRegex = /(https?:\/\/[^\s]+)/g;
         formattedText = formattedText.replace(urlRegex, (url) => {
             const cleanUrl = url.replace(/[.,;!?]$/, '');
@@ -1326,14 +1533,12 @@ class ChatWidget {
         
         this.elements.messagesContainer.appendChild(messageEl);
         
-        // اسکرول به پایین
         setTimeout(() => {
             this.elements.messagesContainer.scrollTop = this.elements.messagesContainer.scrollHeight;
         }, 100);
         
         this.state.messages.push({ type, text, time });
         
-        // صدا و نوتیفیکیشن فقط برای پیام‌های غیر از کاربر
         if (type !== 'user') {
             this.playNotificationSound();
             if (!this.state.isOpen) this.showNotification();
@@ -1356,7 +1561,7 @@ class ChatWidget {
     }
 }
 
-// اضافه کردن Font Awesome اگر وجود ندارد
+// اضافه کردن Font Awesome
 if (!document.querySelector('link[href*="font-awesome"]')) {
     const faLink = document.createElement('link');
     faLink.rel = 'stylesheet';
