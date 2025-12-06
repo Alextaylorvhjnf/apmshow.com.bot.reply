@@ -1272,4 +1272,4 @@ server.listen(PORT, '0.0.0.0', async () => {
         console.log('⚠️ وب‌هوک خطا → Polling فعال شد');
         bot.launch();
     }
-});      
+});
