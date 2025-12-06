@@ -237,7 +237,7 @@ class ChatWidget {
                     gap: 10px;
                 }
                 .chat-logo {
-    width: 40px; /* اندازه دلخواه */
+    width: 60px; /* اندازه دلخواه */
     height: auto; /* حفظ نسبت ابعاد */
 }
 
@@ -757,15 +757,17 @@ class ChatWidget {
                 </div>
                 
                 <!-- ابزارهای ارسال (فایل و ویس) -->
-                <div class="chat-tools">
-                    <button class="tool-btn file-btn">
-                        <i class="fas fa-paperclip"></i>
-                        <span>پیوست</span>
-                    </button>
-                    <button class="tool-btn voice-btn">
-                        <i class="fas fa-microphone"></i>
-                        <span>ویس</span>
-                    </button>
+           <div class="chat-tools">
+    <button class="tool-btn file-btn">
+        <!-- آیکن گیره -->
+        <i class="fas fa-paperclip" style="color: black;"></i>
+        <span>پیوست</span>
+    </button>
+    <button class="tool-btn voice-btn">
+        <!-- آیکن میکروفن مشکی -->
+        <i class="fas fa-microphone" style="color: black;"></i>
+        <span>ویس</span>
+    </button>
                     <input type="file" class="file-input" accept="image/*,video/*,.pdf,.doc,.docx" multiple>
                 </div>
                 
