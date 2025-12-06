@@ -27,7 +27,9 @@ class ChatWidget {
             audioStream: null,
             recordingTime: 0,
             chatHistoryLoaded: false,
-            welcomeMessageVisible: true
+            welcomeMessageVisible: true,
+            notificationCount: 0,
+            isMobile: /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
         };
         // برای چشمک زدن تب و صدا
         this.tabNotificationInterval = null;
@@ -40,6 +42,8 @@ class ChatWidget {
         this.handleVoiceTouchStart = this.handleVoiceTouchStart.bind(this);
         this.handleVoiceTouchEnd = this.handleVoiceTouchEnd.bind(this);
         this.handleVoiceMouseLeave = this.handleVoiceMouseLeave.bind(this);
+        this.handleResize = this.handleResize.bind(this);
+        this.handleKeyboard = this.handleKeyboard.bind(this);
         
         this.init();
     }
@@ -51,6 +55,8 @@ class ChatWidget {
         this.initEvents();
         this.connectWebSocket();
         this.loadChatHistory();
+        this.handleResize();
+        window.addEventListener('resize', this.handleResize);
         console.log('Chat Widget initialized with session:', this.state.sessionId);
     }
 
@@ -86,32 +92,6 @@ class ChatWidget {
             }
             .chat-toggle-btn.pulse {
                 animation: pulse 0.6s ease-in-out;
-            }
-            .notification-badge {
-                position: absolute;
-                top: -8px;
-                right: -8px;
-                background: #e74c3c;
-                color: white;
-                font-size: 11px;
-                font-weight: bold;
-                min-width: 18px;
-                height: 18px;
-                border-radius: 50%;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                border: 2px solid white;
-                box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-            }
-            /* رفع مشکل تداخل */
-            .chat-window {
-                display: none;
-            }
-            .chat-window.active {
-                display: flex;
-                opacity: 1;
-                transform: translateY(0) scale(1);
             }
             /* استایل برای دکمه‌های مخفی */
             .voice-btn,
@@ -213,6 +193,9 @@ class ChatWidget {
         this.container = document.createElement('div');
         this.container.className = 'chat-widget';
         this.container.innerHTML = `
+            <!-- Notification Badge - Above the Widget -->
+            <div class="chat-notification-badge" style="display: none">0</div>
+            
             <!-- Welcome Message - Floating Above Button -->
             <div class="chat-welcome-message">
                 <button class="welcome-message-close">
@@ -228,8 +211,7 @@ class ChatWidget {
                 <!-- Floating Button - Full Image Logo -->
                 <button class="chat-toggle-btn">
                     <img src="${this.options.logoUrl}" alt="لوگو پشتیبانی" class="chat-toggle-logo" 
-                         onerror="this.style.display='none'; this.parentElement.innerHTML='<i class=\'fas fa-comments\' style=\'color: white; font-size: 32px; z-index: 2;\'></i><span class=\'btn-text\' style=\'display: block; color: white; font-size: 11px; margin-top: 5px; z-index: 2;\'>پشتیبانی</span>';">
-                    <span class="notification-badge" style="display: none">0</span>
+                         onerror="this.style.display='none'; this.parentElement.innerHTML='<div style=\'width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: linear-gradient(145deg, #3498db, #2980b9); border-radius: 24px; color: white; font-size: 32px;\'><i class=\'fas fa-comments\'></i></div>';">
                 </button>
             </div>
             
@@ -308,6 +290,7 @@ class ChatWidget {
         `;
         document.body.appendChild(this.container);
         this.elements = {
+            notificationBadge: this.container.querySelector('.chat-notification-badge'),
             welcomeMessage: this.container.querySelector('.chat-welcome-message'),
             welcomeCloseBtn: this.container.querySelector('.welcome-message-close'),
             toggleContainer: this.container.querySelector('.chat-toggle-container'),
@@ -324,7 +307,6 @@ class ChatWidget {
             typingIndicator: this.container.querySelector('.typing-indicator'),
             connectionStatus: this.container.querySelector('.connection-status'),
             operatorInfo: this.container.querySelector('.operator-info'),
-            notificationBadge: this.container.querySelector('.notification-badge'),
             chatStatus: this.container.querySelector('.chat-status'),
             recordingIndicator: this.container.querySelector('.recording-indicator'),
             recordingTime: this.container.querySelector('.recording-time'),
@@ -381,7 +363,21 @@ class ChatWidget {
                 this.sendMessage();
             }
         });
+        
         this.elements.messageInput.addEventListener('input', () => this.resizeTextarea());
+        
+        this.elements.messageInput.addEventListener('focus', () => {
+            if (this.state.isMobile && this.state.isOpen) {
+                this.handleKeyboard(true);
+            }
+        });
+        
+        this.elements.messageInput.addEventListener('blur', () => {
+            if (this.state.isMobile) {
+                this.handleKeyboard(false);
+            }
+        });
+        
         this.elements.humanSupportBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             this.connectToHuman();
@@ -422,6 +418,64 @@ class ChatWidget {
                 this.handleVoiceTouchEnd();
             }
         });
+        
+        // رویداد تغییر اندازه پنجره
+        window.addEventListener('orientationchange', this.handleResize);
+        
+        // رویدادهای کیبورد برای موبایل
+        if (this.state.isMobile) {
+            document.addEventListener('focusin', (e) => {
+                if (this.elements.messageInput.contains(e.target)) {
+                    this.handleKeyboard(true);
+                }
+            });
+            
+            document.addEventListener('focusout', (e) => {
+                if (this.elements.messageInput.contains(e.target)) {
+                    setTimeout(() => this.handleKeyboard(false), 100);
+                }
+            });
+        }
+    }
+
+    handleResize() {
+        const isMobile = window.innerWidth <= 768;
+        this.state.isMobile = isMobile;
+        
+        // تنظیم مجدد موقعیت عناصر برای موبایل
+        if (isMobile && this.state.isOpen) {
+            this.elements.chatWindow.style.height = 'calc(100vh - 150px)';
+            this.elements.chatWindow.style.maxHeight = 'calc(100vh - 150px)';
+        }
+    }
+
+    handleKeyboard(open) {
+        if (!this.state.isMobile) return;
+        
+        if (open) {
+            // کیبورد باز شده
+            this.elements.chatWindow.classList.add('keyboard-open');
+            this.elements.chatWindow.style.height = '100vh';
+            this.elements.chatWindow.style.maxHeight = '100vh';
+            this.elements.chatWindow.style.bottom = '0';
+            this.elements.chatWindow.style.right = '0';
+            this.elements.chatWindow.style.width = '100vw';
+            this.elements.chatWindow.style.borderRadius = '0';
+            
+            // اسکرول به پایین برای دیدن پیام‌ها
+            setTimeout(() => {
+                this.elements.messagesContainer.scrollTop = this.elements.messagesContainer.scrollHeight;
+            }, 300);
+        } else {
+            // کیبورد بسته شده
+            this.elements.chatWindow.classList.remove('keyboard-open');
+            this.elements.chatWindow.style.height = 'calc(100vh - 150px)';
+            this.elements.chatWindow.style.maxHeight = 'calc(100vh - 150px)';
+            this.elements.chatWindow.style.bottom = '105px';
+            this.elements.chatWindow.style.right = '20px';
+            this.elements.chatWindow.style.width = 'calc(100vw - 40px)';
+            this.elements.chatWindow.style.borderRadius = '24px';
+        }
     }
 
     closeWelcomeMessage() {
@@ -802,14 +856,22 @@ class ChatWidget {
             if (!this.state.chatHistoryLoaded) {
                 this.loadChatHistory();
             }
+            
+            // در موبایل، پنجره را به صورت تمام صفحه نمایش بده
+            if (this.state.isMobile) {
+                this.elements.chatWindow.style.height = 'calc(100vh - 150px)';
+                this.elements.chatWindow.style.maxHeight = 'calc(100vh - 150px)';
+            }
         } else {
             this.elements.chatWindow.classList.remove('active');
+            this.handleKeyboard(false);
         }
     }
 
     closeChat() {
         this.state.isOpen = false;
         this.elements.chatWindow.classList.remove('active');
+        this.handleKeyboard(false);
     }
 
     resizeTextarea() {
@@ -1292,17 +1354,22 @@ class ChatWidget {
     }
     
     showNotification(count = 1) {
-        let current = parseInt(this.elements.notificationBadge.textContent) || 0;
-        current += count;
-        this.elements.notificationBadge.textContent = current;
-        this.elements.notificationBadge.style.display = 'flex';
+        this.state.notificationCount += count;
+        this.elements.notificationBadge.textContent = this.state.notificationCount;
+        this.elements.notificationBadge.classList.add('active');
         this.elements.toggleBtn.classList.add('pulse');
         setTimeout(() => this.elements.toggleBtn.classList.remove('pulse'), 600);
+        
+        // اگر پیام خوش‌آمدگویی نمایش داده شده، آن را مخفی کن
+        if (this.state.welcomeMessageVisible) {
+            this.elements.welcomeMessage.classList.add('hidden');
+        }
     }
     
     resetNotification() {
+        this.state.notificationCount = 0;
         this.elements.notificationBadge.textContent = '0';
-        this.elements.notificationBadge.style.display = 'none';
+        this.elements.notificationBadge.classList.remove('active');
         this.stopTabNotification();
     }
     
