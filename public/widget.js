@@ -217,7 +217,7 @@ class ChatWidget {
             <div class="chat-window">
                 <div class="chat-header">
                     <div class="header-left">
-                        <div class="chat-logo"><i class="fas fa-headset"></i></div>
+                        <div class="chat-logo"><i class=""></i></div>
                         <div class="chat-title">
                             <h3>پشتیبان هوشمند</h3>
                             <p>پاسخگوی سوالات شما</p>
