@@ -212,16 +212,20 @@ class ChatWidget {
         this.container.className = 'chat-widget';
         this.container.innerHTML = `
             <!-- Container for floating elements -->
-            <div class="chat-toggle-container">
-                <!-- Floating Button with Logo -->
-                <button class="chat-toggle-btn">
-                    <div class="chat-logo-container">
-                        <img src="${this.options.logoUrl}" alt="لوگو پشتیبانی" onerror="this.style.display='none'; this.parentElement.innerHTML='<i class=\'fas fa-comments\' style=\'color: #3498db; font-size: 24px;\'></i>';">
-                    </div>
-                    <span class="btn-text">پشتیبانی</span>
-                    <span class="notification-badge" style="display: none">0</span>
-                </button>
-            </div>
+           <div class="chat-toggle-container">
+    <!-- Floating Button with Logo -->
+    <button class="chat-toggle-btn">
+        <div class="chat-logo-container">
+            <img src="https://shikpooshaan.ir/widjet.logo.png" 
+                 alt="لوگو پشتیبانی" 
+                 onerror="this.style.display='none'; this.parentElement.innerHTML='<i class=\'fas fa-comments\' style=\'color: #3498db; font-size: 24px;\'></i>';">
+        </div>
+        <span class="btn-text">پشتیبانی</span>
+        <span class="notification-badge" style="display: none">0</span>
+        <button class="close-chat-btn">&times;</button> <!-- دکمه بستن -->
+    </button>
+</div>
+
             
             <!-- Chat Window -->
             <div class="chat-window">
