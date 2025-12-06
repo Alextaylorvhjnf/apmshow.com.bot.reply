@@ -28,7 +28,8 @@ class ChatWidget {
             recordingTime: 0,
             chatHistoryLoaded: false,
             welcomeMessageVisible: true,
-            isMobile: window.innerWidth <= 768
+            isMobile: window.innerWidth <= 768,
+            originalBodyOverflow: ''
         };
         // برای چشمک زدن تب و صدا
         this.tabNotificationInterval = null;
@@ -424,10 +425,42 @@ class ChatWidget {
             }
         });
         
-        // رسیپانسیو بودن
+        // رسیپانسیو بودن و چک کردن orientation گوشی
         window.addEventListener('resize', () => {
             this.state.isMobile = window.innerWidth <= 768;
+            // اگر در حالت موبایل و چت باز است، مجدداً محاسبات ارتفاع را انجام بده
+            if (this.state.isMobile && this.state.isOpen) {
+                this.adjustMobileLayout();
+            }
         });
+        
+        // چک کردن orientation گوشی
+        window.addEventListener('orientationchange', () => {
+            setTimeout(() => {
+                if (this.state.isMobile && this.state.isOpen) {
+                    this.adjustMobileLayout();
+                }
+            }, 300);
+        });
+    }
+
+    adjustMobileLayout() {
+        // تنظیم ارتفاع کانتینر پیام‌ها در موبایل
+        const headerHeight = this.elements.chatHeader?.offsetHeight || 90;
+        const inputAreaHeight = this.elements.chatInputArea?.offsetHeight || 180;
+        const availableHeight = window.innerHeight - headerHeight - inputAreaHeight;
+        
+        if (this.elements.messagesContainer && availableHeight > 200) {
+            this.elements.messagesContainer.style.maxHeight = availableHeight + 'px';
+            this.elements.messagesContainer.style.height = availableHeight + 'px';
+        }
+        
+        // اسکرول به آخرین پیام
+        setTimeout(() => {
+            if (this.elements.messagesContainer) {
+                this.elements.messagesContainer.scrollTop = this.elements.messagesContainer.scrollHeight;
+            }
+        }, 100);
     }
 
     closeWelcomeMessage() {
@@ -800,28 +833,62 @@ class ChatWidget {
     toggleChat() {
         this.state.isOpen = !this.state.isOpen;
         if (this.state.isOpen) {
-            this.elements.chatWindow.classList.add('active');
-            this.elements.messageInput.focus();
-            this.resetNotification();
-            
-            // اگر تاریخچه بارگذاری نشده، بارگذاری کن
-            if (!this.state.chatHistoryLoaded) {
-                this.loadChatHistory();
-            }
+            this.openChat();
         } else {
-            this.elements.chatWindow.classList.remove('active');
+            this.closeChat();
         }
     }
 
+    openChat() {
+        // در موبایل: مخفی کردن دکمه شناور
+        if (this.state.isMobile) {
+            this.elements.toggleContainer.classList.add('hidden');
+            // جلوگیری از اسکرول بدنه
+            this.state.originalBodyOverflow = document.body.style.overflow;
+            document.body.style.overflow = 'hidden';
+        }
+        
+        this.elements.chatWindow.classList.add('active');
+        this.elements.messageInput.focus();
+        this.resetNotification();
+        
+        // تنظیم layout برای موبایل
+        if (this.state.isMobile) {
+            setTimeout(() => {
+                this.adjustMobileLayout();
+            }, 100);
+        }
+        
+        // اگر تاریخچه بارگذاری نشده، بارگذاری کن
+        if (!this.state.chatHistoryLoaded) {
+            this.loadChatHistory();
+        }
+        
+        this.state.isOpen = true;
+    }
+
     closeChat() {
-        this.state.isOpen = false;
+        // در موبایل: نمایش مجدد دکمه شناور و بازگرداندن اسکرول
+        if (this.state.isMobile) {
+            this.elements.toggleContainer.classList.remove('hidden');
+            document.body.style.overflow = this.state.originalBodyOverflow;
+        }
+        
         this.elements.chatWindow.classList.remove('active');
+        this.state.isOpen = false;
     }
 
     resizeTextarea() {
         const textarea = this.elements.messageInput;
         textarea.style.height = 'auto';
         textarea.style.height = Math.min(textarea.scrollHeight, 100) + 'px';
+        
+        // در موبایل: تنظیم مجدد layout هنگام تغییر ارتفاع textarea
+        if (this.state.isMobile && this.state.isOpen) {
+            setTimeout(() => {
+                this.adjustMobileLayout();
+            }, 50);
+        }
     }
 
     async sendMessage() {
@@ -1381,6 +1448,10 @@ class ChatWidget {
         // اسکرول به پایین
         setTimeout(() => {
             this.elements.messagesContainer.scrollTop = this.elements.messagesContainer.scrollHeight;
+            // در موبایل: تنظیم مجدد layout
+            if (this.state.isMobile && this.state.isOpen) {
+                this.adjustMobileLayout();
+            }
         }, 100);
         
         this.state.messages.push({ type, text, time });
@@ -1399,6 +1470,13 @@ class ChatWidget {
         this.elements.sendBtn.disabled = typing;
         this.elements.messageInput.disabled = typing;
         if (!typing) this.elements.messageInput.focus();
+        
+        // در موبایل: تنظیم layout هنگام تایپ
+        if (this.state.isMobile && this.state.isOpen) {
+            setTimeout(() => {
+                this.adjustMobileLayout();
+            }, 50);
+        }
     }
     
     escapeHtml(text) {
