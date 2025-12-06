@@ -30,9 +30,12 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ==================== کش ====================
-const cache = new NodeCache({ stdTTL: 3600 });
+// ==================== کش و تاریخچه ====================
+const cache = new NodeCache({ stdTTL: 3600 * 24 }); // 24 ساعت
 const botSessions = new Map();
+
+// ذخیره تاریخچه کامل چت (کاربر + اپراتور + سیستم)
+const chatHistory = new Map();
 
 const getSession = (id) => {
     let s = cache.get(id);
@@ -42,6 +45,7 @@ const getSession = (id) => {
             messages: [], 
             userInfo: {}, 
             connectedToHuman: false, 
+            operatorId: null,
             preferences: {},
             searchHistory: []
         };
@@ -51,37 +55,38 @@ const getSession = (id) => {
 };
 
 // ==================== مدیریت تاریخچه چت ====================
-const messageHistory = new Map(); // برای ذخیره تاریخچه پیام‌ها
-
-// ذخیره پیام در تاریخچه
+// ذخیره پیام در تاریخچه کامل
 function saveMessageToHistory(sessionId, message) {
-    if (!messageHistory.has(sessionId)) {
-        messageHistory.set(sessionId, []);
+    if (!chatHistory.has(sessionId)) {
+        chatHistory.set(sessionId, []);
     }
-    messageHistory.get(sessionId).push({
+    chatHistory.get(sessionId).push({
         ...message,
-        timestamp: new Date()
+        timestamp: new Date(),
+        savedAt: new Date().toISOString()
     });
     
-    // محدود کردن تاریخچه به 100 پیام آخر
-    if (messageHistory.get(sessionId).length > 100) {
-        messageHistory.set(sessionId, messageHistory.get(sessionId).slice(-100));
+    // محدود کردن تاریخچه به 200 پیام آخر
+    if (chatHistory.get(sessionId).length > 200) {
+        chatHistory.set(sessionId, chatHistory.get(sessionId).slice(-200));
     }
 }
 
-// دریافت تاریخچه چت
-function getChatHistory(sessionId) {
-    return messageHistory.get(sessionId) || [];
+// دریافت تاریخچه کامل چت
+function getFullChatHistory(sessionId) {
+    return chatHistory.get(sessionId) || [];
 }
 
 // پاک کردن تاریخچه چت برای کاربر
 function clearChatHistory(sessionId) {
-    if (messageHistory.has(sessionId)) {
-        messageHistory.delete(sessionId);
+    if (chatHistory.has(sessionId)) {
+        chatHistory.delete(sessionId);
     }
     // همچنین پیام‌های کش شده را پاک کنید
     const session = getSession(sessionId);
     session.messages = [];
+    session.connectedToHuman = false;
+    session.operatorId = null;
     cache.set(sessionId, session);
     
     // پاک کردن سشن از botSessions اگر وجود دارد
@@ -490,7 +495,8 @@ bot.command('chats', async (ctx) => {
             code: short,
             user: info.userInfo?.name || 'ناشناس',
             page: info.userInfo?.page || 'نامشخص',
-            createdAt: info.createdAt
+            createdAt: info.createdAt,
+            messageCount: getFullChatHistory(info.fullId).length
         }));
     
     if (activeChats.length === 0) {
@@ -504,6 +510,7 @@ bot.command('chats', async (ctx) => {
         message += `${index + 1}. **کد:** ${chat.code}\n`;
         message += `   👤 کاربر: ${chat.user}\n`;
         message += `   🌐 صفحه: ${chat.page}\n`;
+        message += `   💬 پیام‌ها: ${chat.messageCount}\n`;
         message += `   ⏰ زمان: ${timeAgo} دقیقه پیش\n`;
         message += `   📝 مدیریت: /clear_${chat.code} /close_${chat.code}\n\n`;
     });
@@ -535,12 +542,7 @@ bot.command(/^clear_(.+)/, async (ctx) => {
     // بستن اتصال اپراتور
     botSessions.delete(sessionCode);
     
-    await ctx.reply(`✅ تاریخچه چت ${sessionCode} با موفقیت پاک شد.`);
-    
-    // اطلاع به کاربر
-    io.to(info.fullId).emit('operator-disconnected', {
-        message: '👤 اپراتور از چت خارج شد.'
-    });
+    await ctx.reply(`✅ تاریخچه چت ${sessionCode} با موفقیت پاک شد.\nتعداد پیام‌های پاک شده: ${getFullChatHistory(info.fullId).length}`);
 });
 
 // دستور بستن چت
@@ -566,6 +568,7 @@ bot.command(/^close_(.+)/, async (ctx) => {
     // ریست کردن وضعیت اتصال
     const session = getSession(info.fullId);
     session.connectedToHuman = false;
+    session.operatorId = null;
     cache.set(info.fullId, session);
     
     // پاک کردن از botSessions
@@ -582,17 +585,31 @@ bot.action(/accept_(.+)/, async (ctx) => {
     if (!info) return ctx.answerCbQuery('منقضی شده');
     
     botSessions.set(short, { ...info, chatId: ctx.chat.id });
-    getSession(info.fullId).connectedToHuman = true;
+    
+    const session = getSession(info.fullId);
+    session.connectedToHuman = true;
+    session.operatorId = ctx.chat.id;
+    cache.set(info.fullId, session);
     
     await ctx.answerCbQuery('پذیرفته شد');
     
     await ctx.editMessageText(`🎯 **شما این گفتگو را پذیرفتید**\n\n` +
                              `👤 کاربر: ${info.userInfo?.name || 'ناشناس'}\n` +
                              `📄 صفحه: ${info.userInfo?.page || 'نامشخص'}\n` +
-                             `🔢 کد جلسه: ${short}\n\n` +
+                             `🔢 کد جلسه: ${short}\n` +
+                             `💬 تعداد پیام‌ها: ${getFullChatHistory(info.fullId).length}\n\n` +
                              `📝 **دستورات مدیریت:**\n` +
                              `/clear_${short} - پاک کردن تاریخچه چت\n` +
                              `/close_${short} - بستن چت`);
+    
+    // ارسال پیام اتصال موفق به کاربر
+    const operatorConnectedMessage = `✅ **اپراتور به چت متصل شد**\n\n` +
+                                   `👤 هم‌اکنون می‌توانید سوالات خود را بپرسید.\n` +
+                                   `🎤 همچنین می‌توانید پیام صوتی و فایل ارسال کنید.`;
+    
+    io.to(info.fullId).emit('operator-connected', {
+        message: operatorConnectedMessage
+    });
 });
 
 bot.action(/reject_(.+)/, async (ctx) => {
@@ -609,6 +626,16 @@ bot.on('text', async (ctx) => {
     
     const [short, info] = entry;
     
+    // ذخیره پیام اپراتور در تاریخچه
+    const operatorMessage = {
+        role: 'operator',
+        content: ctx.message.text,
+        from: 'اپراتور تلگرام',
+        operatorId: ctx.chat.id
+    };
+    
+    saveMessageToHistory(info.fullId, operatorMessage);
+    
     io.to(info.fullId).emit('operator-message', { 
         message: ctx.message.text,
         from: 'اپراتور'
@@ -621,7 +648,7 @@ app.post('/telegram-webhook', (req, res) => bot.handleUpdate(req.body, res));
 
 // ==================== مسیرهای API ====================
 
-// دریافت تاریخچه چت کاربر
+// دریافت تاریخچه کامل چت
 app.post('/api/chat-history', (req, res) => {
     const { sessionId } = req.body;
     
@@ -629,16 +656,17 @@ app.post('/api/chat-history', (req, res) => {
         return res.status(400).json({ error: 'کد سشن الزامی است' });
     }
     
-    const history = getChatHistory(sessionId);
+    const history = getFullChatHistory(sessionId);
     const session = getSession(sessionId);
     
     res.json({
         success: true,
         sessionId,
         messageCount: history.length,
-        history: history.slice(-50), // فقط 50 پیام آخر
+        history: history.slice(-100), // 100 پیام آخر
         userInfo: session.userInfo,
-        connectedToHuman: session.connectedToHuman
+        connectedToHuman: session.connectedToHuman,
+        operatorId: session.operatorId
     });
 });
 
@@ -649,7 +677,8 @@ app.get('/api/health', (req, res) => {
         time: new Date().toLocaleString('fa-IR'),
         api: SHOP_API_URL,
         sessions: cache.keys().length,
-        activeChats: Array.from(botSessions.entries()).filter(([_, info]) => info.chatId).length
+        activeChats: Array.from(botSessions.entries()).filter(([_, info]) => info.chatId).length,
+        totalMessages: Array.from(chatHistory.keys()).reduce((sum, key) => sum + chatHistory.get(key).length, 0)
     });
 });
 
@@ -685,11 +714,12 @@ app.post('/api/chat', async (req, res) => {
             session.userInfo = { ...session.userInfo, ...userInfo };
         }
         
-        // ذخیره پیام در تاریخچه
+        // ذخیره پیام کاربر در تاریخچه
         const userMessage = { 
             role: 'user', 
             content: message,
-            timestamp: new Date() 
+            timestamp: new Date(),
+            from: 'کاربر وبسایت'
         };
         
         session.messages.push(userMessage);
@@ -726,7 +756,11 @@ app.post('/api/chat', async (req, res) => {
                              `✅ **پیگیری شما کامل شد!**\n` +
                              `اگر سوال دیگری دارید، با کمال میل در خدمتتونم. 😊`;
                 
-                const assistantMessage = { role: 'assistant', content: reply };
+                const assistantMessage = { 
+                    role: 'assistant', 
+                    content: reply,
+                    from: 'دستیار هوشمند'
+                };
                 session.messages.push(assistantMessage);
                 saveMessageToHistory(sessionId, assistantMessage);
                 
@@ -740,7 +774,11 @@ app.post('/api/chat', async (req, res) => {
                              `• ممکن است سفارش هنوز ثبت نشده باشد\n` +
                              `• برای بررسی دقیق‌تر، "اپراتور" را تایپ کنید`;
                 
-                const assistantMessage = { role: 'assistant', content: reply };
+                const assistantMessage = { 
+                    role: 'assistant', 
+                    content: reply,
+                    from: 'دستیار هوشمند'
+                };
                 session.messages.push(assistantMessage);
                 saveMessageToHistory(sessionId, assistantMessage);
                 
@@ -765,7 +803,11 @@ app.post('/api/chat', async (req, res) => {
             
             searchingMsg += `لطفاً کمی صبر کنید... ⏳`;
             
-            const searchingMessage = { role: 'assistant', content: searchingMsg };
+            const searchingMessage = { 
+                role: 'assistant', 
+                content: searchingMsg,
+                from: 'دستیار هوشمند'
+            };
             session.messages.push(searchingMessage);
             saveMessageToHistory(sessionId, searchingMessage);
             
@@ -782,7 +824,11 @@ app.post('/api/chat', async (req, res) => {
                         searchResult.suggestedAlternatives
                     );
                     
-                    const productMessage = { role: 'assistant', content: productReply };
+                    const productMessage = { 
+                        role: 'assistant', 
+                        content: productReply,
+                        from: 'دستیار هوشمند'
+                    };
                     session.messages.push(productMessage);
                     saveMessageToHistory(sessionId, productMessage);
                     
@@ -801,7 +847,11 @@ app.post('/api/chat', async (req, res) => {
                                      `• چند لحظه دیگر دوباره تلاش کنید\n` +
                                      `• یا "اپراتور" رو تایپ کنید`;
                     
-                    const errorMessage = { role: 'assistant', content: errorReply };
+                    const errorMessage = { 
+                        role: 'assistant', 
+                        content: errorReply,
+                        from: 'دستیار هوشمند'
+                    };
                     session.messages.push(errorMessage);
                     saveMessageToHistory(sessionId, errorMessage);
                     
@@ -818,7 +868,11 @@ app.post('/api/chat', async (req, res) => {
         // ========== پیشنهاد ==========
         if (analysis.type === 'suggestion') {
             const prompt = responses.suggestionPrompt();
-            const promptMessage = { role: 'assistant', content: prompt };
+            const promptMessage = { 
+                role: 'assistant', 
+                content: prompt,
+                from: 'دستیار هوشمند'
+            };
             session.messages.push(promptMessage);
             saveMessageToHistory(sessionId, promptMessage);
             
@@ -836,7 +890,11 @@ app.post('/api/chat', async (req, res) => {
                          `• از من بخواهید پیشنهاد بدم 🎁\n` +
                          `• یا برای صحبت با "اپراتور" بنویسید 👤`;
             
-            const greetingMessage = { role: 'assistant', content: reply };
+            const greetingMessage = { 
+                role: 'assistant', 
+                content: reply,
+                from: 'دستیار هوشمند'
+            };
             session.messages.push(greetingMessage);
             saveMessageToHistory(sessionId, greetingMessage);
             
@@ -849,7 +907,11 @@ app.post('/api/chat', async (req, res) => {
                          `**امر دیگری هست که بتونم کمکتون کنم؟** 🌸\n\n` +
                          `همیشه در خدمت شما هستم!`;
             
-            const thanksMessage = { role: 'assistant', content: reply };
+            const thanksMessage = { 
+                role: 'assistant', 
+                content: reply,
+                from: 'دستیار هوشمند'
+            };
             session.messages.push(thanksMessage);
             saveMessageToHistory(sessionId, thanksMessage);
             
@@ -872,7 +934,8 @@ app.post('/api/chat', async (req, res) => {
                 `👤 نام: ${session.userInfo?.name || 'ناشناس'}\n` +
                 `📄 صفحه: ${session.userInfo?.page || 'نامشخص'}\n` +
                 `🔢 کد جلسه: ${short}\n` +
-                `💬 آخرین پیام: ${message.substring(0, 50)}...\n\n` +
+                `💬 آخرین پیام: ${message.substring(0, 50)}...\n` +
+                `📊 تعداد پیام‌ها: ${getFullChatHistory(sessionId).length}\n\n` +
                 `🕐 زمان: ${new Date().toLocaleTimeString('fa-IR')}`,
                 {
                     reply_markup: {
@@ -884,12 +947,16 @@ app.post('/api/chat', async (req, res) => {
                 }
             );
             
-            const reply = `✅ **درخواست شما ثبت شد!**\n\n` +
-                         `کارشناسان ما در تلگرام مطلع شدند و به زودی با شما ارتباط برقرار می‌کنند.\n\n` +
-                         `⏳ **لطفاً منتظر بمانید...**\n` +
-                         `کد جلسه شما: **${short}**`;
+            const reply = `✅ **درخواست برای اپراتورها ارسال شد**\n\n` +
+                         `لطفاً چند لحظه منتظر بمانید... ⏳\n\n` +
+                         `کد جلسه شما: **${short}**\n` +
+                         `به محض پذیرش توسط اپراتور، به شما اطلاع داده می‌شود.`;
             
-            const operatorMessage = { role: 'assistant', content: reply };
+            const operatorMessage = { 
+                role: 'system', 
+                content: reply,
+                from: 'سیستم'
+            };
             session.messages.push(operatorMessage);
             saveMessageToHistory(sessionId, operatorMessage);
             
@@ -910,7 +977,11 @@ app.post('/api/chat', async (req, res) => {
                              `• کد پیگیری سفارش رو وارد کنید\n` +
                              `• یا "اپراتور" رو برای کمک بیشتر تایپ کنید`;
                 
-                const defaultMessage = { role: 'assistant', content: reply };
+                const defaultMessage = { 
+                    role: 'assistant', 
+                    content: reply,
+                    from: 'دستیار هوشمند'
+                };
                 session.messages.push(defaultMessage);
                 saveMessageToHistory(sessionId, defaultMessage);
                 
@@ -929,7 +1000,11 @@ app.post('/api/chat', async (req, res) => {
                           `**لطفاً انتخاب کنید:**\n` +
                           `"کد پیگیری" ، "جستجو" ، "پیشنهاد" یا "اپراتور"`;
         
-        const finalMessage = { role: 'assistant', content: finalReply };
+        const finalMessage = { 
+            role: 'assistant', 
+            content: finalReply,
+            from: 'دستیار هوشمند'
+        };
         session.messages.push(finalMessage);
         saveMessageToHistory(sessionId, finalMessage);
         
@@ -997,7 +1072,8 @@ app.post('/api/connect-human', async (req, res) => {
         `🔔 **درخواست اتصال جدید**\n\n` +
         `👤 کاربر: ${session.userInfo?.name || 'ناشناس'}\n` +
         `📄 صفحه: ${session.userInfo?.page || 'نامشخص'}\n` +
-        `🔢 کد: ${short}\n\n` +
+        `🔢 کد: ${short}\n` +
+        `📊 تاریخچه: ${getFullChatHistory(sessionId).length} پیام\n\n` +
         `🕐 ${new Date().toLocaleTimeString('fa-IR')}`,
         {
             reply_markup: {
@@ -1009,10 +1085,26 @@ app.post('/api/connect-human', async (req, res) => {
         }
     );
     
+    const responseMessage = `✅ **درخواست برای اپراتورها ارسال شد**\n\n` +
+                          `لطفاً چند لحظه منتظر بمانید... ⏳\n\n` +
+                          `کد جلسه شما: **${short}**\n` +
+                          `به محض پذیرش توسط اپراتور، به شما اطلاع داده می‌شود.`;
+    
+    // ذخیره پیام سیستم
+    const systemMessage = {
+        role: 'system',
+        content: responseMessage,
+        from: 'سیستم',
+        timestamp: new Date()
+    };
+    
+    saveMessageToHistory(sessionId, systemMessage);
+    session.messages.push(systemMessage);
+    
     res.json({ 
         success: true, 
         pending: true,
-        message: 'درخواست شما برای اتصال به اپراتور ثبت شد. لطفاً منتظر بمانید...',
+        message: responseMessage,
         sessionCode: short
     });
 });
@@ -1026,10 +1118,10 @@ io.on('connection', (socket) => {
         console.log(`📝 کاربر به سشن ${sessionId} پیوست`);
         
         // ارسال تاریخچه چت قبلی
-        const history = getChatHistory(sessionId);
+        const history = getFullChatHistory(sessionId);
         if (history.length > 0) {
             socket.emit('chat-history-loaded', {
-                history: history.slice(-20) // 20 پیام آخر
+                history: history.slice(-50) // 50 پیام آخر
             });
         }
     });
@@ -1116,7 +1208,7 @@ io.on('connection', (socket) => {
 app.get('/', (req, res) => {
     res.json({
         name: '✨ شیک‌پوشان - پشتیبانی هوشمند ✨',
-        version: '6.0.0',
+        version: '7.0.0',
         status: 'آنلاین ✅',
         features: [
             'پیگیری سفارش با کد رهگیری',
@@ -1126,7 +1218,8 @@ app.get('/', (req, res) => {
             'اتصال به اپراتور انسانی',
             'ارسال فایل و پیام صوتی',
             'مدیریت چت از تلگرام (پاک کردن/بستن)',
-            'ذخیره تاریخچه چت'
+            'ذخیره تاریخچه کامل چت (کاربر + اپراتور)',
+            'بارگذاری خودکار تاریخچه با رفرش صفحه'
         ],
         api: SHOP_API_URL,
         endpoints: {
@@ -1153,7 +1246,8 @@ server.listen(PORT, '0.0.0.0', async () => {
     console.log(`🛍️ API سایت: ${SHOP_API_URL}`);
     console.log(`🤖 تلگرام: ${TELEGRAM_BOT_TOKEN ? 'فعال ✅' : 'غیرفعال ❌'}`);
     console.log(`📊 سیستم مدیریت چت: فعال ✅`);
-    console.log(`💾 ذخیره تاریخچه: فعال ✅`);
+    console.log(`💾 ذخیره تاریخچه کامل: فعال ✅`);
+    console.log(`🔄 بارگذاری خودکار تاریخچه: فعال ✅`);
     
     try {
         await bot.telegram.setWebhook(`https://ai-chat-support-production.up.railway.app/telegram-webhook`);
@@ -1165,7 +1259,7 @@ server.listen(PORT, '0.0.0.0', async () => {
             `✅ API: ${SHOP_API_URL}\n` +
             `✅ جستجوی هوشمند: فعال\n` +
             `✅ مدیریت چت: فعال\n` +
-            `✅ ذخیره تاریخچه: فعال\n\n` +
+            `✅ ذخیره تاریخچه کامل: فعال\n\n` +
             `📝 **دستورات مدیریت:**\n` +
             `/chats - مشاهده چت‌های فعال\n` +
             `/clear_[کد] - پاک کردن تاریخچه\n` +
