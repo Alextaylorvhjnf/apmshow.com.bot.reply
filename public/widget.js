@@ -6,6 +6,8 @@ class ChatWidget {
             telegramChatId: options.telegramChatId || '',
             position: options.position || 'bottom-left',
             theme: options.theme || 'default',
+            customText: options.customText || 'نیاز به کمک دارید؟',
+            logoUrl: options.logoUrl || 'https://shikpooshaan.ir/widjet.logo.png',
             ...options
         };
         this.state = {
@@ -24,7 +26,8 @@ class ChatWidget {
             recordingTimer: null,
             audioStream: null,
             recordingTime: 0,
-            chatHistoryLoaded: false
+            chatHistoryLoaded: false,
+            widgetVisible: true // برای نمایش/مخفی کردن ویجت
         };
         // برای چشمک زدن تب و صدا
         this.tabNotificationInterval = null;
@@ -210,10 +213,30 @@ class ChatWidget {
         this.container = document.createElement('div');
         this.container.className = 'chat-widget';
         this.container.innerHTML = `
-            <button class="chat-toggle-btn">
-                <i class="fas fa-comment-dots"></i>
-                <span class="notification-badge" style="display: none">0</span>
-            </button>
+            <!-- Container for floating elements -->
+            <div class="chat-toggle-container">
+                <!-- Floating Logo -->
+                <div class="chat-floating-logo">
+                    <img src="${this.options.logoUrl}" alt="لوگو" onerror="this.style.display='none'; this.parentElement.innerHTML='<i class=\'fas fa-comments\'></i>';">
+                </div>
+                
+                <!-- Floating Text -->
+                <div class="chat-floating-text">${this.options.customText}</div>
+                
+                <!-- Widget Close Button -->
+                <button class="widget-close-btn" title="بستن ویجت">
+                    <i class="fas fa-times"></i>
+                </button>
+                
+                <!-- Floating Button -->
+                <button class="chat-toggle-btn">
+                    <i class="fas fa-comment-dots"></i>
+                    <span class="btn-text">پشتیبانی</span>
+                    <span class="notification-badge" style="display: none">0</span>
+                </button>
+            </div>
+            
+            <!-- Chat Window -->
             <div class="chat-window">
                 <div class="chat-header">
                     <div class="header-left">
@@ -288,9 +311,13 @@ class ChatWidget {
         `;
         document.body.appendChild(this.container);
         this.elements = {
+            toggleContainer: this.container.querySelector('.chat-toggle-container'),
             toggleBtn: this.container.querySelector('.chat-toggle-btn'),
             chatWindow: this.container.querySelector('.chat-window'),
             closeBtn: this.container.querySelector('.close-btn'),
+            widgetCloseBtn: this.container.querySelector('.widget-close-btn'),
+            floatingLogo: this.container.querySelector('.chat-floating-logo'),
+            floatingText: this.container.querySelector('.chat-floating-text'),
             messagesContainer: this.container.querySelector('.chat-messages'),
             messageInput: this.container.querySelector('.message-input'),
             sendBtn: this.container.querySelector('.send-btn'),
@@ -309,14 +336,24 @@ class ChatWidget {
     }
 
     initEvents() {
+        // رویداد دکمه باز کردن چت
         this.elements.toggleBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             this.toggleChat();
         });
+        
+        // رویداد دکمه بستن پنجره چت
         this.elements.closeBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             this.closeChat();
         });
+        
+        // رویداد دکمه بستن ویجت (کل مجموعه شناور)
+        this.elements.widgetCloseBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.closeWidget();
+        });
+        
         this.elements.sendBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             this.sendMessage();
@@ -388,6 +425,71 @@ class ChatWidget {
                 this.handleVoiceTouchEnd();
             }
         });
+        
+        // تنظیم موقعیت بر اساس option
+        this.setPosition(this.options.position);
+    }
+
+    setPosition(position) {
+        const toggleContainer = this.elements.toggleContainer;
+        const chatWindow = this.elements.chatWindow;
+        
+        // حذف کلاس‌های موقعیت قبلی
+        toggleContainer.style.left = '';
+        toggleContainer.style.right = '';
+        toggleContainer.style.bottom = '';
+        toggleContainer.style.top = '';
+        
+        chatWindow.style.left = '';
+        chatWindow.style.right = '';
+        chatWindow.style.bottom = '';
+        chatWindow.style.top = '';
+        
+        switch(position) {
+            case 'bottom-right':
+                toggleContainer.style.left = 'auto';
+                toggleContainer.style.right = '40px';
+                toggleContainer.style.bottom = '60px';
+                
+                chatWindow.style.left = 'auto';
+                chatWindow.style.right = '40px';
+                chatWindow.style.bottom = '145px';
+                break;
+                
+            case 'top-left':
+                toggleContainer.style.left = '40px';
+                toggleContainer.style.right = 'auto';
+                toggleContainer.style.top = '60px';
+                toggleContainer.style.bottom = 'auto';
+                
+                chatWindow.style.left = '40px';
+                chatWindow.style.right = 'auto';
+                chatWindow.style.top = '145px';
+                chatWindow.style.bottom = 'auto';
+                break;
+                
+            case 'top-right':
+                toggleContainer.style.left = 'auto';
+                toggleContainer.style.right = '40px';
+                toggleContainer.style.top = '60px';
+                toggleContainer.style.bottom = 'auto';
+                
+                chatWindow.style.left = 'auto';
+                chatWindow.style.right = '40px';
+                chatWindow.style.top = '145px';
+                chatWindow.style.bottom = 'auto';
+                break;
+                
+            default: // bottom-left
+                toggleContainer.style.left = '40px';
+                toggleContainer.style.right = 'auto';
+                toggleContainer.style.bottom = '60px';
+                
+                chatWindow.style.left = '40px';
+                chatWindow.style.right = 'auto';
+                chatWindow.style.bottom = '145px';
+                break;
+        }
     }
 
     // تابع‌های هندلر برای ضبط صدا
@@ -764,6 +866,23 @@ class ChatWidget {
     closeChat() {
         this.state.isOpen = false;
         this.elements.chatWindow.classList.remove('active');
+    }
+    
+    closeWidget() {
+        this.state.widgetVisible = false;
+        this.elements.toggleContainer.classList.add('hidden');
+        this.closeChat();
+        
+        // ذخیره وضعیت در localStorage
+        localStorage.setItem('chat_widget_hidden', 'true');
+        
+        console.log('ویجت پشتیبانی بسته شد');
+    }
+    
+    showWidget() {
+        this.state.widgetVisible = true;
+        this.elements.toggleContainer.classList.remove('hidden');
+        localStorage.setItem('chat_widget_hidden', 'false');
     }
 
     resizeTextarea() {
@@ -1366,9 +1485,18 @@ if (!document.querySelector('link[href*="font-awesome"]')) {
 
 // راه‌اندازی خودکار
 if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => window.ChatWidget = new ChatWidget());
+    document.addEventListener('DOMContentLoaded', () => {
+        // بررسی اینکه آیا کاربر قبلاً ویجت را بسته است
+        const widgetHidden = localStorage.getItem('chat_widget_hidden');
+        if (widgetHidden !== 'true') {
+            window.ChatWidget = new ChatWidget();
+        }
+    });
 } else {
-    window.ChatWidget = new ChatWidget();
+    const widgetHidden = localStorage.getItem('chat_widget_hidden');
+    if (widgetHidden !== 'true') {
+        window.ChatWidget = new ChatWidget();
+    }
 }
 
 window.initChatWidget = (options) => new ChatWidget(options);
