@@ -84,7 +84,7 @@ class ChatWidget {
                 /* Floating Button */
                 .chat-toggle-btn {
                     position: fixed;
-                    bottom: 40px;
+                    bottom: 60px;
                     left: 20px;
                     width: 60px;
                     height: 60px;
@@ -133,7 +133,7 @@ class ChatWidget {
                     bottom: 90px;
                     left: 20px;
                     width: 350px;
-                    height: 500px;
+                    height: 800px;
                     background: white;
                     border-radius: 12px;
                     box-shadow: 0 10px 40px rgba(0,0,0,0.1);
