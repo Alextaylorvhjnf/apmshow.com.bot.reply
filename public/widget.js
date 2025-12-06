@@ -23,7 +23,9 @@ class ChatWidget {
             audioChunks: [],
             recordingTime: 0,
             unreadCount: 0,
-            externalNotification: null
+            externalNotification: null,
+            lastUserMessageTime: 0,
+            operatorIsTyping: false
         };
         
         this.tabNotificationInterval = null;
@@ -86,14 +88,14 @@ class ChatWidget {
                 
                 /* Floating Button */
                 .chat-toggle-btn {
-                    position: "bottom-right";
-                    bottom: 60px;
+                    position: fixed;
+                    bottom: 130px; /* فاصله از پایین افزایش یافته */
                     left: 20px;
-                    width: 60px;
-                    height: 60px;
+                    width: 70px; /* عرض افزایش یافته */
+                    height: 70px; /* ارتفاع افزایش یافته */
                     border-radius: 50%;
-                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                    border: none;
+                    background: white; /* پس‌زمینه سفید */
+                    border: 3px solid #667eea; /* حاشیه رنگی */
                     color: white;
                     cursor: pointer;
                     display: flex;
@@ -102,6 +104,8 @@ class ChatWidget {
                     box-shadow: 0 4px 20px rgba(0,0,0,0.2);
                     z-index: 10000;
                     transition: all 0.3s ease;
+                    padding: 0;
+                    overflow: hidden;
                 }
                 
                 .chat-toggle-btn:hover {
@@ -109,8 +113,11 @@ class ChatWidget {
                     box-shadow: 0 6px 25px rgba(0,0,0,0.3);
                 }
                 
-                .chat-toggle-btn i {
-                    font-size: 24px;
+                .toggle-btn-img {
+                    width: 100%;
+                    height: 100%;
+                    object-fit: cover;
+                    border-radius: 50%;
                 }
                 
                 .notification-badge {
@@ -128,6 +135,7 @@ class ChatWidget {
                     justify-content: center;
                     font-weight: bold;
                     border: 2px solid white;
+                    z-index: 1;
                 }
                 
                 /* External Notification */
@@ -156,7 +164,7 @@ class ChatWidget {
                 
                 .notification-logo {
                     width: 30px;
-                    height: 50px;
+                    height: 30px;
                     border-radius: 50%;
                     background: rgba(255,255,255,0.2);
                     display: flex;
@@ -197,7 +205,7 @@ class ChatWidget {
                 /* Chat Window */
                 .chat-window {
                     position: fixed;
-                    bottom: 95px;
+                    bottom: 150px; /* فاصله از پایین افزایش یافته */
                     left: 20px;
                     width: 350px;
                     height: 700px;
@@ -236,11 +244,7 @@ class ChatWidget {
                     align-items: center;
                     gap: 10px;
                 }
-                .chat-logo {
-    width: 60px; /* اندازه دلخواه */
-    height: auto; /* حفظ نسبت ابعاد */
-}
-
+                
                 .chat-logo {
                     width: 40px;
                     height: 40px;
@@ -401,6 +405,39 @@ class ChatWidget {
                 
                 .message.user .message-time {
                     text-align: left;
+                }
+                
+                /* Quick Messages */
+                .quick-messages {
+                    padding: 10px 15px;
+                    background: white;
+                    border-top: 1px solid #eee;
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 8px;
+                    display: none;
+                }
+                
+                .quick-messages.active {
+                    display: flex;
+                }
+                
+                .quick-message-btn {
+                    padding: 8px 12px;
+                    border: 1px solid #ddd;
+                    border-radius: 20px;
+                    background: white;
+                    color: #666;
+                    cursor: pointer;
+                    font-size: 12px;
+                    transition: all 0.2s;
+                    white-space: nowrap;
+                }
+                
+                .quick-message-btn:hover {
+                    background: #f5f5f5;
+                    border-color: #667eea;
+                    color: #667eea;
                 }
                 
                 /* Tools */
@@ -645,12 +682,12 @@ class ChatWidget {
                         height: 70vh;
                         left: 20px;
                         right: 20px;
-                        bottom: 80px;
+                        bottom: 150px;
                     }
                     
                     .chat-toggle-btn {
                         left: 20px;
-                        bottom: 20px;
+                        bottom: 130px;
                     }
                     
                     .external-notification {
@@ -694,11 +731,10 @@ class ChatWidget {
             </div>
             
             <!-- دکمه شناور -->
-           <button class="chat-toggle-btn">
-    <img src="https://shikpooshaan.ir/widjet.logo.png" alt="Chat Logo" class="chat-logo">
-    <span class="notification-badge" style="display: none">0</span>
-</button>
-
+            <button class="chat-toggle-btn">
+                <img src="${this.options.logoUrl}" alt="Chat Logo" class="toggle-btn-img" onerror="this.style.display='none'; this.parentElement.innerHTML='<i class=\\'fas fa-headset\\' style=\\'font-size: 28px; color: #667eea;\\'></i>';">
+                <span class="notification-badge" style="display: none">0</span>
+            </button>
             
             <!-- پنجره چت -->
             <div class="chat-window">
@@ -726,6 +762,14 @@ class ChatWidget {
                 
                 <!-- پیام‌ها -->
                 <div class="chat-messages"></div>
+                
+                <!-- پیام‌های سریع -->
+                <div class="quick-messages">
+                    <button class="quick-message-btn" data-message="سلام">سلام</button>
+                    <button class="quick-message-btn" data-message="لطفا راهنمایی کنید">لطفا راهنمایی کنید</button>
+                    <button class="quick-message-btn" data-message="چطور می‌تونم خرید کنم؟">چطور می‌تونم خرید کنم؟</button>
+                    <button class="quick-message-btn" data-message="سفارش من کجاست؟">سفارش من کجاست؟</button>
+                </div>
                 
                 <!-- وضعیت اتصال -->
                 <div class="connection-status">
@@ -756,18 +800,16 @@ class ChatWidget {
                     </div>
                 </div>
                 
-                <!-- ابزارهای ارسال (فایل و ویس) -->
-           <div class="chat-tools">
-    <button class="tool-btn file-btn">
-        <!-- آیکن گیره -->
-        <i class="fas fa-paperclip" style="color: black;"></i>
-        <span>پیوست</span>
-    </button>
-    <button class="tool-btn voice-btn">
-        <!-- آیکن میکروفن مشکی -->
-        <i class="fas fa-microphone" style="color: black;"></i>
-        <span>ویس</span>
-    </button>
+                <!-- ابزارهای ارسال -->
+                <div class="chat-tools">
+                    <button class="tool-btn file-btn">
+                        <i class="fas fa-paperclip" style="color: black;"></i>
+                        <span>پیوست</span>
+                    </button>
+                    <button class="tool-btn voice-btn">
+                        <i class="fas fa-microphone" style="color: black;"></i>
+                        <span>ویس</span>
+                    </button>
                     <input type="file" class="file-input" accept="image/*,video/*,.pdf,.doc,.docx" multiple>
                 </div>
                 
@@ -808,16 +850,10 @@ class ChatWidget {
             voiceBtn: this.container.querySelector('.voice-btn'),
             fileInput: this.container.querySelector('.file-input'),
             externalNotification: this.container.querySelector('.external-notification'),
-            notificationCloseBtn: this.container.querySelector('.notification-close')
+            notificationCloseBtn: this.container.querySelector('.notification-close'),
+            quickMessages: this.container.querySelector('.quick-messages'),
+            quickMessageBtns: this.container.querySelectorAll('.quick-message-btn')
         };
-        
-        // اطمینان از اینکه المان‌ها پیدا شدند
-        if (!this.elements.toggleBtn) {
-            console.error('❌ المان toggleBtn پیدا نشد!');
-        }
-        if (!this.elements.chatWindow) {
-            console.error('❌ المان chatWindow پیدا نشد!');
-        }
         
         console.log('✅ HTML ویجت با موفقیت تزریق شد');
     }
@@ -914,6 +950,17 @@ class ChatWidget {
             this.stopRecording();
         });
         
+        // رویدادهای پیام‌های سریع
+        this.elements.quickMessageBtns.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const message = e.target.getAttribute('data-message');
+                if (message) {
+                    this.elements.messageInput.value = message;
+                    this.sendMessage();
+                }
+            });
+        });
+        
         // بستن چت با کلیک خارج
         document.addEventListener('click', (e) => {
             if (this.state.isOpen && 
@@ -957,6 +1004,7 @@ class ChatWidget {
                 this.addMessage('operator', data.message);
                 this.showExternalNotification();
                 this.playNotificationSound();
+                this.setOperatorTyping(false); // وقتی پیام ارسال شد، تایپینگ را خاموش کن
             });
             
             this.state.socket.on('ai-message', (data) => {
@@ -965,6 +1013,20 @@ class ChatWidget {
                 this.setTyping(false);
                 this.showExternalNotification();
                 this.playNotificationSound();
+            });
+            
+            this.state.socket.on('operator-typing', (data) => {
+                console.log('⌨️ اپراتور در حال تایپ است');
+                if (data.typing) {
+                    this.setOperatorTyping(true);
+                } else {
+                    this.setOperatorTyping(false);
+                }
+            });
+            
+            this.state.socket.on('user-message-received', (data) => {
+                console.log('✅ پیام کاربر دریافت شد:', data);
+                // این رویداد برای اطمینان از دریافت پیام کاربر است
             });
             
             this.state.socket.on('disconnect', () => {
@@ -1012,6 +1074,7 @@ class ChatWidget {
                 this.elements.messageInput.focus();
                 this.resetNotification();
                 this.updateToolButtons();
+                this.updateQuickMessages();
                 this.hideExternalNotification();
                 console.log('✅ چت باز شد');
             } else {
@@ -1031,6 +1094,7 @@ class ChatWidget {
             this.elements.messageInput.focus();
             this.resetNotification();
             this.updateToolButtons();
+            this.updateQuickMessages();
             this.hideExternalNotification();
         }
     }
@@ -1070,6 +1134,17 @@ class ChatWidget {
         }
     }
     
+    updateQuickMessages() {
+        if (this.elements.quickMessages) {
+            // فقط وقتی که اپراتور متصل نیست پیام‌های سریع را نشان بده
+            if (!this.state.operatorConnected) {
+                this.elements.quickMessages.classList.add('active');
+            } else {
+                this.elements.quickMessages.classList.remove('active');
+            }
+        }
+    }
+    
     resizeTextarea() {
         const textarea = this.elements.messageInput;
         textarea.style.height = 'auto';
@@ -1081,6 +1156,14 @@ class ChatWidget {
         
         if (!message || this.state.isTyping) return;
         
+        // چک کردن زمان آخرین پیام کاربر
+        const now = Date.now();
+        if (now - this.state.lastUserMessageTime < 3000) { // 3 ثانیه فاصله بین پیام‌ها
+            this.addMessage('system', '⚠️ لطفاً کمی صبر کنید...');
+            return;
+        }
+        
+        this.state.lastUserMessageTime = now;
         this.addMessage('user', message);
         this.elements.messageInput.value = '';
         this.resizeTextarea();
@@ -1147,6 +1230,7 @@ class ChatWidget {
                 if (data.connectedToHuman !== undefined) {
                     this.state.operatorConnected = data.connectedToHuman;
                     this.updateToolButtons();
+                    this.updateQuickMessages();
                 }
                 
             } else {
@@ -1296,6 +1380,9 @@ class ChatWidget {
         // فعال کردن ابزارهای ارسال
         this.updateToolButtons();
         
+        // غیرفعال کردن پیام‌های سریع
+        this.updateQuickMessages();
+        
         // تغییر دکمه اتصال
         if (this.elements.humanSupportBtn) {
             this.elements.humanSupportBtn.innerHTML = `
@@ -1313,6 +1400,16 @@ class ChatWidget {
             'منتظر سوال شما هستم! 😊';
         
         this.addMessage('system', welcomeMessage);
+    }
+    
+    setOperatorTyping(typing) {
+        if (this.state.operatorIsTyping === typing) return;
+        
+        this.state.operatorIsTyping = typing;
+        
+        if (typing) {
+            this.addMessage('system', 'اپراتور در حال تایپ است...');
+        }
     }
     
     triggerFileInput() {
