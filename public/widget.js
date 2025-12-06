@@ -133,6 +133,8 @@ class ChatWidget {
                 </div>
                 <div class="chat-input-area">
                     <div class="input-wrapper">
+                        <button class="voice-btn"><i class="fas fa-microphone"></i></button>
+                        <button class="file-btn"><i class="fas fa-paperclip"></i></button>
                         <textarea class="message-input" placeholder="پیام خود را بنویسید..." rows="1"></textarea>
                         <button class="send-btn"><i class="fas fa-paper-plane"></i></button>
                     </div>
@@ -151,6 +153,8 @@ class ChatWidget {
             messagesContainer: this.container.querySelector('.chat-messages'),
             messageInput: this.container.querySelector('.message-input'),
             sendBtn: this.container.querySelector('.send-btn'),
+            voiceBtn: this.container.querySelector('.voice-btn'),
+            fileBtn: this.container.querySelector('.file-btn'),
             humanSupportBtn: this.container.querySelector('.human-support-btn'),
             typingIndicator: this.container.querySelector('.typing-indicator'),
             connectionStatus: this.container.querySelector('.connection-status'),
@@ -163,6 +167,8 @@ class ChatWidget {
         this.elements.toggleBtn.addEventListener('click', () => this.toggleChat());
         this.elements.closeBtn.addEventListener('click', () => this.closeChat());
         this.elements.sendBtn.addEventListener('click', () => this.sendMessage());
+        this.elements.voiceBtn.addEventListener('click', () => this.startVoiceRecording());
+        this.elements.fileBtn.addEventListener('click', () => this.uploadFile());
         this.elements.messageInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
@@ -313,6 +319,21 @@ class ChatWidget {
         this.elements.operatorInfo.classList.add('active');
         this.addMessage('system', data.message || 'اپراتور متصل شد!');
     }
+    startVoiceRecording() {
+        this.addMessage('system', 'قابلیت ضبط صدا به زودی اضافه خواهد شد.');
+    }
+    uploadFile() {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/*,.pdf,.doc,.docx,.txt';
+        input.onchange = (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                this.addMessage('system', `فایل "${file.name}" انتخاب شد. (آپلود به زودی فعال می‌شود)`);
+            }
+        };
+        input.click();
+    }
     // صدا + نوتیفیکیشن + چشمک تب
     playNotificationSound() {
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -398,4 +419,4 @@ if (document.readyState === 'loading') {
 } else {
     window.ChatWidget = new ChatWidget();
 }
-window.initChatWidget = (options) => new ChatWidget(options); 
+window.initChatWidget = (options) => new ChatWidget(options);
