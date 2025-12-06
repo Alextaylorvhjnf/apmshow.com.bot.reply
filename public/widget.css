@@ -97,8 +97,8 @@
 
 .welcome-message-close {
     position: absolute;
-    top: 10px;
-    left: 10px;
+    top: 8px;
+    left: 8px;
     width: 30px;
     height: 30px;
     border-radius: 50%;
