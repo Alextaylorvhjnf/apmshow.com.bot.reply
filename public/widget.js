@@ -579,7 +579,7 @@ class ChatWidget {
             return;
         }
         
-        const audioBlob = new Blob(this.state.audioChunks, { type: 'audio/webm' });
+        const audioBlob = new Blob(this.state.audioChunks, { type: 'audio/ogg; codecs=opus' });
         const duration = Date.now() - this.state.recordingStartTime;
         const durationSeconds = Math.floor(duration / 1000);
         
@@ -587,7 +587,7 @@ class ChatWidget {
         this.addMessage('user', `پیام صوتی (${durationSeconds} ثانیه)`);
         
         // ارسال به تلگرام
-        await this.sendToTelegram(audioBlob, 'voice', `پیام صوتی از کاربر - مدت: ${durationSeconds} ثانیه`);
+        await this.sendToTelegram(audioBlob, 'voice', `پیام صوتی از کاربر - مدت: ${durationSeconds} ثانیه\nسشن: ${this.state.sessionId}\nصفحه: ${window.location.href}`);
         
         // پاکسازی
         this.state.isRecording = false;
@@ -616,7 +616,7 @@ class ChatWidget {
                 
                 try {
                     // ارسال فایل به تلگرام
-                    await this.sendToTelegram(file, 'document', `فایل از کاربر: ${file.name}`);
+                    await this.sendToTelegram(file, 'document', `فایل از کاربر: ${file.name}\nسشن: ${this.state.sessionId}\nصفحه: ${window.location.href}`);
                     
                     this.addMessage('system', `فایل "${file.name}" با موفقیت ارسال شد.`);
                     
@@ -633,32 +633,50 @@ class ChatWidget {
         // بررسی وجود توکن تلگرام
         if (!this.options.telegramBotToken || !this.options.telegramChatId) {
             console.warn('Telegram bot token or chat ID not provided');
+            this.addMessage('system', 'تنظیمات تلگرام کامل نیست. لطفاً با پشتیبانی تماس بگیرید.');
             return;
         }
         
+        // ایجاد FormData
         const formData = new FormData();
         formData.append('chat_id', this.options.telegramChatId);
-        formData.append('caption', `سشن: ${this.state.sessionId}\n${caption}`);
+        formData.append('caption', caption);
         
+        // نام فایل برای صدا
+        const fileName = type === 'voice' ? 'voice_message.ogg' : file.name;
+        
+        // اضافه کردن فایل به FormData
         if (type === 'voice') {
-            formData.append('voice', file, 'voice_message.ogg');
+            formData.append('voice', file, fileName);
         } else {
-            formData.append('document', file);
+            formData.append('document', file, fileName);
         }
         
-        const telegramUrl = `https://api.telegram.org/bot${this.options.telegramBotToken}/send${type === 'voice' ? 'Voice' : 'Document'}`;
+        // URL API تلگرام
+        const method = type === 'voice' ? 'sendVoice' : 'sendDocument';
+        const telegramUrl = `https://api.telegram.org/bot${this.options.telegramBotToken}/${method}`;
+        
+        console.log('Sending to Telegram:', { 
+            url: telegramUrl, 
+            type, 
+            fileName, 
+            fileSize: file.size 
+        });
         
         try {
             const response = await fetch(telegramUrl, {
                 method: 'POST',
                 body: formData
+                // Note: Do NOT set Content-Type header for FormData
             });
             
             const result = await response.json();
+            console.log('Telegram API response:', result);
             
             if (!result.ok) {
                 console.error('Telegram API error:', result);
-                throw new Error('Telegram API error');
+                this.addMessage('system', `خطا در ارسال به تلگرام: ${result.description || 'خطای ناشناخته'}`);
+                throw new Error(`Telegram API error: ${result.description}`);
             }
             
             console.log(`${type} sent to Telegram successfully`);
@@ -666,7 +684,40 @@ class ChatWidget {
             
         } catch (error) {
             console.error('Error sending to Telegram:', error);
+            
+            // ارسال از طریق سرور بک‌اند به عنوان راه حل جایگزین
+            await this.sendViaBackend(file, type, caption);
+            
             throw error;
+        }
+    }
+    
+    async sendViaBackend(file, type, caption) {
+        try {
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('type', type);
+            formData.append('caption', caption);
+            formData.append('sessionId', this.state.sessionId);
+            formData.append('telegramBotToken', this.options.telegramBotToken);
+            formData.append('telegramChatId', this.options.telegramChatId);
+            
+            const response = await fetch(`${this.options.backendUrl}/api/send-to-telegram`, {
+                method: 'POST',
+                body: formData
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                this.addMessage('system', 'فایل از طریق سرور ارسال شد.');
+                return result;
+            } else {
+                throw new Error('Backend send failed');
+            }
+        } catch (error) {
+            console.error('Backend send error:', error);
+            this.addMessage('system', 'خطا در ارسال فایل. لطفاً دوباره امتحان کنید.');
         }
     }
     
