@@ -5,7 +5,6 @@ class ChatWidget {
             position: options.position || 'bottom-left',
             theme: options.theme || 'light',
             companyName: options.companyName || 'شیک‌پوشان',
-            logoUrl: options.logoUrl || 'https://shikpooshaan.ir/widjet.logo.png',
             ...options
         };
         
@@ -21,9 +20,7 @@ class ChatWidget {
             isRecording: false,
             mediaRecorder: null,
             audioChunks: [],
-            recordingTime: 0,
-            unreadCount: 0,
-            externalNotification: null
+            recordingTime: 0
         };
         
         this.tabNotificationInterval = null;
@@ -130,70 +127,6 @@ class ChatWidget {
                     border: 2px solid white;
                 }
                 
-                /* External Notification */
-                .external-notification {
-                    position: fixed;
-                    top: 20px;
-                    left: 50%;
-                    transform: translateX(-50%) translateY(-100px);
-                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                    color: white;
-                    padding: 12px 20px;
-                    border-radius: 8px;
-                    box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-                    z-index: 10001;
-                    display: flex;
-                    align-items: center;
-                    gap: 12px;
-                    min-width: 300px;
-                    max-width: 90%;
-                    transition: transform 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
-                }
-                
-                .external-notification.show {
-                    transform: translateX(-50%) translateY(0);
-                }
-                
-                .notification-logo {
-                    width: 30px;
-                    height: 30px;
-                    border-radius: 50%;
-                    background: rgba(255,255,255,0.2);
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    font-size: 14px;
-                }
-                
-                .notification-content {
-                    flex: 1;
-                }
-                
-                .notification-content h4 {
-                    margin: 0 0 4px 0;
-                    font-size: 14px;
-                    font-weight: 600;
-                }
-                
-                .notification-content p {
-                    margin: 0;
-                    font-size: 12px;
-                    opacity: 0.9;
-                }
-                
-                .notification-close {
-                    background: none;
-                    border: none;
-                    color: white;
-                    cursor: pointer;
-                    opacity: 0.7;
-                    transition: opacity 0.3s;
-                }
-                
-                .notification-close:hover {
-                    opacity: 1;
-                }
-                
                 /* Chat Window */
                 .chat-window {
                     position: fixed;
@@ -246,13 +179,6 @@ class ChatWidget {
                     align-items: center;
                     justify-content: center;
                     font-size: 18px;
-                    overflow: hidden;
-                }
-                
-                .chat-logo img {
-                    width: 100%;
-                    height: 100%;
-                    object-fit: cover;
                 }
                 
                 .chat-title h3 {
@@ -332,10 +258,6 @@ class ChatWidget {
                     margin-right: auto;
                 }
                 
-                .message.operator {
-                    margin-right: auto;
-                }
-                
                 .message.system {
                     max-width: 90%;
                     margin: 10px auto;
@@ -353,6 +275,7 @@ class ChatWidget {
                 }
                 
                 .message-text {
+                    background: white;
                     padding: 10px 15px;
                     border-radius: 18px;
                     box-shadow: 0 2px 5px rgba(0,0,0,0.1);
@@ -367,17 +290,9 @@ class ChatWidget {
                 }
                 
                 .message.assistant .message-text {
-                    background: #ffffff;
+                    background: white;
                     color: #333;
                     border-bottom-left-radius: 5px;
-                    border: 1px solid #e0e0e0;
-                }
-                
-                .message.operator .message-text {
-                    background: #e8f5e9;
-                    color: #333;
-                    border-bottom-left-radius: 5px;
-                    border: 1px solid #c8e6c9;
                 }
                 
                 .message.system .message-text {
@@ -385,7 +300,6 @@ class ChatWidget {
                     color: #1976d2;
                     font-size: 13px;
                     padding: 8px 12px;
-                    border: 1px solid #bbdefb;
                 }
                 
                 .message-time {
@@ -432,12 +346,6 @@ class ChatWidget {
                 .tool-btn:hover {
                     background: #f5f5f5;
                     border-color: #ccc;
-                }
-                
-                .tool-btn.recording {
-                    background: #ffebee;
-                    border-color: #ffcdd2;
-                    color: #c62828;
                 }
                 
                 .file-input {
@@ -585,8 +493,8 @@ class ChatWidget {
                     width: 40px;
                     height: 40px;
                     border-radius: 50%;
-                    background: #1976d2;
-                    color: white;
+                    background:#1976d2;
+                    color: blue;
                     display: flex;
                     align-items: center;
                     justify-content: center;
@@ -623,17 +531,6 @@ class ChatWidget {
                     background: #aaa;
                 }
                 
-                /* Pulse Animation */
-                @keyframes pulse {
-                    0% { transform: scale(1); }
-                    50% { transform: scale(1.1); }
-                    100% { transform: scale(1); }
-                }
-                
-                .pulse {
-                    animation: pulse 0.6s ease;
-                }
-                
                 /* Responsive */
                 @media (max-width: 480px) {
                     .chat-window {
@@ -647,17 +544,6 @@ class ChatWidget {
                     .chat-toggle-btn {
                         left: 20px;
                         bottom: 20px;
-                    }
-                    
-                    .external-notification {
-                        left: 20px;
-                        right: 20px;
-                        transform: translateY(-100px);
-                        min-width: auto;
-                    }
-                    
-                    .external-notification.show {
-                        transform: translateY(0);
                     }
                 }
             `;
@@ -675,20 +561,6 @@ class ChatWidget {
         this.container = document.createElement('div');
         this.container.className = 'chat-widget';
         this.container.innerHTML = `
-            <!-- نوتیفیکیشن خارج از ویجت -->
-            <div class="external-notification">
-                <div class="notification-logo">
-                    <i class="fas fa-comment-dots"></i>
-                </div>
-                <div class="notification-content">
-                    <h4>پیام جدید</h4>
-                    <p>پیام جدید از پشتیبانی دریافت کردید</p>
-                </div>
-                <button class="notification-close">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-            
             <!-- دکمه شناور -->
             <button class="chat-toggle-btn">
                 <i class="fas fa-comment-dots"></i>
@@ -701,7 +573,7 @@ class ChatWidget {
                 <div class="chat-header">
                     <div class="header-left">
                         <div class="chat-logo">
-                            <img src="${this.options.logoUrl}" alt="Logo" onerror="this.style.display='none'; this.parentElement.innerHTML='<i class=\\'fas fa-headset\\'></i>';">
+                            <i class="fas fa-headset"></i>
                         </div>
                         <div class="chat-title">
                             <h3>${this.options.companyName}</h3>
@@ -755,11 +627,11 @@ class ChatWidget {
                 <div class="chat-tools">
                     <button class="tool-btn file-btn">
                         <i class="fas fa-paperclip"></i>
-                        <span>پیوست</span>
+                        <span>ارسال فایل</span>
                     </button>
                     <button class="tool-btn voice-btn">
                         <i class="fas fa-microphone"></i>
-                        <span>ویس</span>
+                        <span>ضبط صوت</span>
                     </button>
                     <input type="file" class="file-input" accept="image/*,video/*,.pdf,.doc,.docx" multiple>
                 </div>
@@ -799,9 +671,7 @@ class ChatWidget {
             chatTools: this.container.querySelector('.chat-tools'),
             fileBtn: this.container.querySelector('.file-btn'),
             voiceBtn: this.container.querySelector('.voice-btn'),
-            fileInput: this.container.querySelector('.file-input'),
-            externalNotification: this.container.querySelector('.external-notification'),
-            notificationCloseBtn: this.container.querySelector('.notification-close')
+            fileInput: this.container.querySelector('.file-input')
         };
         
         // اطمینان از اینکه المان‌ها پیدا شدند
@@ -832,20 +702,6 @@ class ChatWidget {
         this.elements.closeBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             this.closeChat();
-        });
-        
-        // بستن نوتیفیکیشن خارجی
-        this.elements.notificationCloseBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            this.hideExternalNotification();
-        });
-        
-        // خودکار بستن نوتیفیکیشن خارجی بعد از 5 ثانیه
-        this.elements.externalNotification.addEventListener('click', (e) => {
-            if (!e.target.closest('.notification-close')) {
-                this.openChat();
-                this.hideExternalNotification();
-            }
         });
         
         // رویدادهای ارسال پیام
@@ -948,16 +804,12 @@ class ChatWidget {
             this.state.socket.on('operator-message', (data) => {
                 console.log('📩 پیام از اپراتور:', data);
                 this.addMessage('operator', data.message);
-                this.showExternalNotification();
-                this.playNotificationSound();
             });
             
             this.state.socket.on('ai-message', (data) => {
                 console.log('🤖 پیام از AI:', data);
                 this.addMessage('assistant', data.message);
                 this.setTyping(false);
-                this.showExternalNotification();
-                this.playNotificationSound();
             });
             
             this.state.socket.on('disconnect', () => {
@@ -1005,7 +857,6 @@ class ChatWidget {
                 this.elements.messageInput.focus();
                 this.resetNotification();
                 this.updateToolButtons();
-                this.hideExternalNotification();
                 console.log('✅ چت باز شد');
             } else {
                 chatWindow.classList.remove('active');
@@ -1024,7 +875,6 @@ class ChatWidget {
             this.elements.messageInput.focus();
             this.resetNotification();
             this.updateToolButtons();
-            this.hideExternalNotification();
         }
     }
     
@@ -1033,23 +883,6 @@ class ChatWidget {
         this.state.isOpen = false;
         if (this.elements.chatWindow) {
             this.elements.chatWindow.classList.remove('active');
-        }
-    }
-    
-    showExternalNotification() {
-        if (!this.state.isOpen && this.elements.externalNotification) {
-            this.elements.externalNotification.classList.add('show');
-            
-            // خودکار بستن بعد از 5 ثانیه
-            setTimeout(() => {
-                this.hideExternalNotification();
-            }, 5000);
-        }
-    }
-    
-    hideExternalNotification() {
-        if (this.elements.externalNotification) {
-            this.elements.externalNotification.classList.remove('show');
         }
     }
     
@@ -1129,7 +962,6 @@ class ChatWidget {
             
             if (data.success) {
                 this.addMessage('assistant', data.message);
-                this.playNotificationSound();
                 
                 // اگر سیستم پیشنهاد اتصال به اپراتور داد
                 if (data.requiresHuman) {
@@ -1460,7 +1292,7 @@ class ChatWidget {
         this.state.isRecording = false;
         clearInterval(this.recordingTimer);
         this.elements.voiceBtn.classList.remove('recording');
-        this.elements.voiceBtn.innerHTML = '<i class="fas fa-microphone"></i><span>ویس</span>';
+        this.elements.voiceBtn.innerHTML = '<i class="fas fa-microphone"></i><span>ضبط صوت</span>';
     }
     
     blobToBase64(blob) {
@@ -1540,6 +1372,7 @@ class ChatWidget {
         if (!this.state.isOpen && (type === 'assistant' || type === 'operator' || type === 'system')) {
             this.state.unreadCount = (this.state.unreadCount || 0) + 1;
             this.showNotification();
+            this.playNotificationSound();
             
             if (document.hidden) {
                 this.startTabNotification();
@@ -1606,46 +1439,24 @@ class ChatWidget {
     
     playNotificationSound() {
         try {
-            // ایجاد صدای نوتیفیکیشن ساده و ملایم
-            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            
-            // ایجاد نوسان‌ساز
-            const oscillator = audioContext.createOscillator();
-            const gainNode = audioContext.createGain();
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const oscillator = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
             
             oscillator.connect(gainNode);
-            gainNode.connect(audioContext.destination);
+            gainNode.connect(audioCtx.destination);
             
-            // تنظیمات صدا
             oscillator.type = 'sine';
-            oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
-            oscillator.frequency.exponentialRampToValueAtTime(600, audioContext.currentTime + 0.1);
+            oscillator.frequency.setValueAtTime(800, audioCtx.currentTime);
+            oscillator.frequency.exponentialRampToValueAtTime(600, audioCtx.currentTime + 0.1);
             
-            // کنترل حجم صدا
-            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
+            gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
             
-            // پخش صدا
-            oscillator.start(audioContext.currentTime);
-            oscillator.stop(audioContext.currentTime + 0.3);
-            
-            // پاکسازی منابع
-            setTimeout(() => {
-                oscillator.disconnect();
-                gainNode.disconnect();
-            }, 400);
-            
+            oscillator.start(audioCtx.currentTime);
+            oscillator.stop(audioCtx.currentTime + 0.3);
         } catch (error) {
-            console.log('⚠️ صدا پخش نشد (ممکن است مرورگر اجازه ندهد):', error);
-            
-            // راه‌حل جایگزین برای مرورگرهایی که Web Audio API را محدود کرده‌اند
-            try {
-                const audio = new Audio('data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEAQB8AAEAfAAABAAgAZGF0YQ');
-                audio.volume = 0.3;
-                audio.play().catch(e => console.log('صدا پخش نشد'));
-            } catch (e) {
-                console.log('هیچ روشی برای پخش صدا کار نکرد');
-            }
+            console.log('صدا پخش نشد:', error);
         }
     }
     
