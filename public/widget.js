@@ -2,6 +2,8 @@ class ChatWidget {
     constructor(options = {}) {
         this.options = {
             backendUrl: options.backendUrl || window.location.origin,
+            telegramBotToken: options.telegramBotToken || '',
+            telegramChatId: options.telegramChatId || '',
             position: options.position || 'bottom-left',
             theme: options.theme || 'default',
             ...options
@@ -14,7 +16,12 @@ class ChatWidget {
             socket: null,
             messages: [],
             isTyping: false,
-            isConnecting: false
+            isConnecting: false,
+            isRecording: false,
+            mediaRecorder: null,
+            audioChunks: [],
+            recordingStartTime: null,
+            recordingTimer: null
         };
         // برای چشمک زدن تب و صدا
         this.tabNotificationInterval = null;
@@ -53,6 +60,11 @@ class ChatWidget {
                 0% { transform: scale(1); }
                 50% { transform: scale(1.18); }
                 100% { transform: scale(1); }
+            }
+            @keyframes recordingPulse {
+                0% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0.7); }
+                70% { box-shadow: 0 0 0 10px rgba(255, 0, 0, 0); }
+                100% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0); }
             }
             .chat-toggle-btn.pulse {
                 animation: pulse 0.6s ease-in-out;
@@ -96,6 +108,36 @@ class ChatWidget {
                 display: flex;
                 opacity: 1;
                 transform: scale(1);
+            }
+            /* استایل برای حالت ضبط */
+            .voice-btn.recording {
+                background: linear-gradient(145deg, #ff0000, #cc0000) !important;
+                animation: recordingPulse 1.5s infinite;
+            }
+            .recording-indicator {
+                display: none;
+                align-items: center;
+                gap: 8px;
+                padding: 8px 16px;
+                background: rgba(255, 0, 0, 0.1);
+                border-radius: 20px;
+                margin-top: 10px;
+                font-size: 13px;
+                font-weight: bold;
+                color: #ff0000;
+            }
+            .recording-indicator.active {
+                display: flex;
+            }
+            .recording-dot {
+                width: 10px;
+                height: 10px;
+                background: #ff0000;
+                border-radius: 50%;
+                animation: recordingPulse 1.5s infinite;
+            }
+            .recording-time {
+                font-family: monospace;
             }
         `;
         document.head.appendChild(style);
@@ -155,6 +197,11 @@ class ChatWidget {
                     </div>
                 </div>
                 <div class="chat-input-area">
+                    <div class="recording-indicator">
+                        <div class="recording-dot"></div>
+                        <span>در حال ضبط...</span>
+                        <span class="recording-time">00:00</span>
+                    </div>
                     <div class="input-wrapper">
                         <button class="voice-btn"><i class="fas fa-microphone"></i></button>
                         <button class="file-btn"><i class="fas fa-paperclip"></i></button>
@@ -183,7 +230,9 @@ class ChatWidget {
             connectionStatus: this.container.querySelector('.connection-status'),
             operatorInfo: this.container.querySelector('.operator-info'),
             notificationBadge: this.container.querySelector('.notification-badge'),
-            chatStatus: this.container.querySelector('.chat-status')
+            chatStatus: this.container.querySelector('.chat-status'),
+            recordingIndicator: this.container.querySelector('.recording-indicator'),
+            recordingTime: this.container.querySelector('.recording-time')
         };
     }
     initEvents() {
@@ -199,14 +248,42 @@ class ChatWidget {
             e.stopPropagation();
             this.sendMessage();
         });
-        this.elements.voiceBtn.addEventListener('click', (e) => {
+        
+        // رویدادهای دکمه ویس
+        this.elements.voiceBtn.addEventListener('mousedown', (e) => {
             e.stopPropagation();
             this.startVoiceRecording();
         });
+        
+        this.elements.voiceBtn.addEventListener('mouseup', (e) => {
+            e.stopPropagation();
+            this.stopVoiceRecording();
+        });
+        
+        this.elements.voiceBtn.addEventListener('mouseleave', (e) => {
+            if (this.state.isRecording) {
+                this.stopVoiceRecording();
+            }
+        });
+        
+        // رویدادهای لمسی برای موبایل
+        this.elements.voiceBtn.addEventListener('touchstart', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            this.startVoiceRecording();
+        });
+        
+        this.elements.voiceBtn.addEventListener('touchend', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            this.stopVoiceRecording();
+        });
+        
         this.elements.fileBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             this.uploadFile();
         });
+        
         this.elements.messageInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
@@ -387,21 +464,137 @@ class ChatWidget {
         // پیام اضافه برای اطلاع کاربر
         this.addMessage('system', 'حالا می‌توانید فایل و پیام صوتی نیز ارسال کنید.');
     }
-    startVoiceRecording() {
+    
+    async startVoiceRecording() {
         // فقط اگر اپراتور متصل است
         if (!this.state.operatorConnected) {
             this.addMessage('system', 'برای ارسال پیام صوتی ابتدا به اپراتور انسانی متصل شوید.');
             return;
         }
         
-        this.addMessage('system', 'در حال ضبط صدا... (این قابلیت به زودی کامل می‌شود)');
+        if (this.state.isRecording) return;
         
-        // شبیه‌سازی ضبط صدا
-        setTimeout(() => {
-            this.addMessage('user', 'پیام صوتی ارسال شد');
-            this.addMessage('system', 'پیام صوتی شما برای اپراتور ارسال شد.');
-        }, 1500);
+        try {
+            // درخواست دسترسی به میکروفون
+            const stream = await navigator.mediaDevices.getUserMedia({ 
+                audio: true 
+            });
+            
+            this.state.isRecording = true;
+            this.state.audioChunks = [];
+            this.state.recordingStartTime = Date.now();
+            
+            // ایجاد MediaRecorder
+            this.state.mediaRecorder = new MediaRecorder(stream);
+            
+            // ذخیره داده‌های ضبط شده
+            this.state.mediaRecorder.ondataavailable = (event) => {
+                if (event.data.size > 0) {
+                    this.state.audioChunks.push(event.data);
+                }
+            };
+            
+            // وقتی ضبط تمام شد
+            this.state.mediaRecorder.onstop = () => {
+                this.finishVoiceRecording();
+            };
+            
+            // شروع ضبط
+            this.state.mediaRecorder.start();
+            
+            // تغییر ظاهر دکمه
+            this.elements.voiceBtn.classList.add('recording');
+            this.elements.recordingIndicator.classList.add('active');
+            
+            // شروع تایمر
+            this.startRecordingTimer();
+            
+            // غیرفعال کردن سایر دکمه‌ها
+            this.elements.fileBtn.disabled = true;
+            this.elements.sendBtn.disabled = true;
+            this.elements.messageInput.disabled = true;
+            
+        } catch (error) {
+            console.error('Error accessing microphone:', error);
+            this.addMessage('system', 'خطا در دسترسی به میکروفون. لطفاً دسترسی را بررسی کنید.');
+            this.state.isRecording = false;
+        }
     }
+    
+    stopVoiceRecording() {
+        if (!this.state.isRecording || !this.state.mediaRecorder) return;
+        
+        // متوقف کردن ضبط
+        this.state.mediaRecorder.stop();
+        
+        // متوقف کردن تایمر
+        this.stopRecordingTimer();
+        
+        // توقف تمام trackهای stream
+        if (this.state.mediaRecorder.stream) {
+            this.state.mediaRecorder.stream.getTracks().forEach(track => track.stop());
+        }
+        
+        // بازگرداندن ظاهر دکمه
+        this.elements.voiceBtn.classList.remove('recording');
+        this.elements.recordingIndicator.classList.remove('active');
+        
+        // فعال کردن سایر دکمه‌ها
+        this.elements.fileBtn.disabled = false;
+        this.elements.sendBtn.disabled = false;
+        this.elements.messageInput.disabled = false;
+        
+        this.addMessage('system', 'در حال پردازش و ارسال پیام صوتی...');
+    }
+    
+    startRecordingTimer() {
+        this.state.recordingTimer = setInterval(() => {
+            if (this.state.recordingStartTime && this.elements.recordingTime) {
+                const elapsed = Date.now() - this.state.recordingStartTime;
+                const seconds = Math.floor(elapsed / 1000);
+                const minutes = Math.floor(seconds / 60);
+                const displaySeconds = seconds % 60;
+                this.elements.recordingTime.textContent = 
+                    `${minutes.toString().padStart(2, '0')}:${displaySeconds.toString().padStart(2, '0')}`;
+                
+                // محدودیت زمانی برای ضبط (5 دقیقه)
+                if (seconds >= 300) {
+                    this.stopVoiceRecording();
+                }
+            }
+        }, 1000);
+    }
+    
+    stopRecordingTimer() {
+        if (this.state.recordingTimer) {
+            clearInterval(this.state.recordingTimer);
+            this.state.recordingTimer = null;
+        }
+    }
+    
+    async finishVoiceRecording() {
+        if (this.state.audioChunks.length === 0) {
+            this.addMessage('system', 'پیام صوتی ضبط نشد.');
+            this.state.isRecording = false;
+            return;
+        }
+        
+        const audioBlob = new Blob(this.state.audioChunks, { type: 'audio/webm' });
+        const duration = Date.now() - this.state.recordingStartTime;
+        const durationSeconds = Math.floor(duration / 1000);
+        
+        // نمایش پیام در چت
+        this.addMessage('user', `پیام صوتی (${durationSeconds} ثانیه)`);
+        
+        // ارسال به تلگرام
+        await this.sendToTelegram(audioBlob, 'voice', `پیام صوتی از کاربر - مدت: ${durationSeconds} ثانیه`);
+        
+        // پاکسازی
+        this.state.isRecording = false;
+        this.state.audioChunks = [];
+        this.state.mediaRecorder = null;
+    }
+    
     uploadFile() {
         // فقط اگر اپراتور متصل است
         if (!this.state.operatorConnected) {
@@ -411,32 +604,70 @@ class ChatWidget {
         
         const input = document.createElement('input');
         input.type = 'file';
-        input.accept = 'image/*,.pdf,.doc,.docx,.txt,.mp3,.wav';
-        input.onchange = (e) => {
+        input.accept = 'image/*,.pdf,.doc,.docx,.txt,.mp3,.wav,.mp4,.zip,.rar';
+        input.onchange = async (e) => {
             const file = e.target.files[0];
             if (file) {
                 // نمایش فایل در چت
                 this.addMessage('user', `فایل: ${file.name} (${this.formatFileSize(file.size)})`);
                 
-                // شبیه‌سازی آپلود
+                // نمایش پیام در حال آپلود
                 this.addMessage('system', `در حال آپلود فایل "${file.name}"...`);
                 
-                setTimeout(() => {
-                    this.addMessage('system', `فایل "${file.name}" با موفقیت برای اپراتور ارسال شد.`);
+                try {
+                    // ارسال فایل به تلگرام
+                    await this.sendToTelegram(file, 'document', `فایل از کاربر: ${file.name}`);
                     
-                    // ارسال فایل به سرور (شبیه‌سازی)
-                    if (this.state.operatorConnected && this.state.socket) {
-                        this.state.socket.emit('file-upload', {
-                            sessionId: this.state.sessionId,
-                            fileName: file.name,
-                            fileSize: file.size,
-                            fileType: file.type
-                        });
-                    }
-                }, 2000);
+                    this.addMessage('system', `فایل "${file.name}" با موفقیت ارسال شد.`);
+                    
+                } catch (error) {
+                    console.error('Error uploading file:', error);
+                    this.addMessage('system', 'خطا در آپلود فایل. لطفاً دوباره تلاش کنید.');
+                }
             }
         };
         input.click();
+    }
+    
+    async sendToTelegram(file, type = 'document', caption = '') {
+        // بررسی وجود توکن تلگرام
+        if (!this.options.telegramBotToken || !this.options.telegramChatId) {
+            console.warn('Telegram bot token or chat ID not provided');
+            return;
+        }
+        
+        const formData = new FormData();
+        formData.append('chat_id', this.options.telegramChatId);
+        formData.append('caption', `سشن: ${this.state.sessionId}\n${caption}`);
+        
+        if (type === 'voice') {
+            formData.append('voice', file, 'voice_message.ogg');
+        } else {
+            formData.append('document', file);
+        }
+        
+        const telegramUrl = `https://api.telegram.org/bot${this.options.telegramBotToken}/send${type === 'voice' ? 'Voice' : 'Document'}`;
+        
+        try {
+            const response = await fetch(telegramUrl, {
+                method: 'POST',
+                body: formData
+            });
+            
+            const result = await response.json();
+            
+            if (!result.ok) {
+                console.error('Telegram API error:', result);
+                throw new Error('Telegram API error');
+            }
+            
+            console.log(`${type} sent to Telegram successfully`);
+            return result;
+            
+        } catch (error) {
+            console.error('Error sending to Telegram:', error);
+            throw error;
+        }
     }
     
     formatFileSize(bytes) {
@@ -462,6 +693,7 @@ class ChatWidget {
         osc.start(audioCtx.currentTime);
         osc.stop(audioCtx.currentTime + 0.3);
     }
+    
     showNotification(count = 1) {
         let current = parseInt(this.elements.notificationBadge.textContent) || 0;
         current += count;
@@ -470,11 +702,13 @@ class ChatWidget {
         this.elements.toggleBtn.classList.add('pulse');
         setTimeout(() => this.elements.toggleBtn.classList.remove('pulse'), 600);
     }
+    
     resetNotification() {
         this.elements.notificationBadge.textContent = '0';
         this.elements.notificationBadge.style.display = 'none';
         this.stopTabNotification();
     }
+    
     startTabNotification() {
         if (this.tabNotificationInterval) return;
         let toggled = false;
@@ -483,6 +717,7 @@ class ChatWidget {
             toggled = !toggled;
         }, 1500);
     }
+    
     stopTabNotification() {
         if (this.tabNotificationInterval) {
             clearInterval(this.tabNotificationInterval);
@@ -490,6 +725,7 @@ class ChatWidget {
             document.title = this.originalTitle;
         }
     }
+    
     addMessage(type, text) {
         const messageEl = document.createElement('div');
         messageEl.className = `message ${type}`;
@@ -513,6 +749,7 @@ class ChatWidget {
             if (document.hidden) this.startTabNotification();
         }
     }
+    
     setTyping(typing) {
         this.state.isTyping = typing;
         this.elements.typingIndicator.classList.toggle('active', typing);
@@ -520,16 +757,19 @@ class ChatWidget {
         this.elements.messageInput.disabled = typing;
         if (!typing) this.elements.messageInput.focus();
     }
+    
     escapeHtml(text) {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
     }
 }
+
 // راه‌اندازی خودکار
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => window.ChatWidget = new ChatWidget());
 } else {
     window.ChatWidget = new ChatWidget();
 }
+
 window.initChatWidget = (options) => new ChatWidget(options);
