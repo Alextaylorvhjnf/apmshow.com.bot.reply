@@ -236,7 +236,11 @@ class ChatWidget {
                     align-items: center;
                     gap: 10px;
                 }
-                
+                .chat-logo {
+    width: 40px; /* اندازه دلخواه */
+    height: auto; /* حفظ نسبت ابعاد */
+}
+
                 .chat-logo {
                     width: 40px;
                     height: 40px;
@@ -690,10 +694,11 @@ class ChatWidget {
             </div>
             
             <!-- دکمه شناور -->
-            <button class="chat-toggle-btn">
-                <i class="fas fa-comment-dots"></i>
-                <span class="notification-badge" style="display: none">0</span>
-            </button>
+           <button class="chat-toggle-btn">
+    <img src="https://shikpooshaan.ir/widjet.logo.png" alt="Chat Logo" class="chat-logo">
+    <span class="notification-badge" style="display: none">0</span>
+</button>
+
             
             <!-- پنجره چت -->
             <div class="chat-window">
