@@ -32,11 +32,99 @@
     -moz-osx-font-smoothing: grayscale;
 }
 
-/* Floating Button - Ultra Modern Design */
-.chat-toggle-btn {
+/* Floating Button Container */
+.chat-toggle-container {
     position: fixed;
     bottom: 60px;
     left: 40px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    z-index: 10000;
+    transition: all 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Floating Logo */
+.chat-floating-logo {
+    width: 60px;
+    height: 60px;
+    border-radius: 16px;
+    background: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 
+        0 12px 35px rgba(109, 93, 252, 0.35),
+        0 6px 20px rgba(109, 93, 252, 0.25),
+        inset 0 1px 0 rgba(255, 255, 255, 0.25),
+        0 0 0 1px rgba(255, 255, 255, 0.1);
+    overflow: hidden;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    backdrop-filter: blur(10px);
+    transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.chat-floating-logo:hover {
+    transform: translateY(-5px) scale(1.05);
+    box-shadow: 
+        0 20px 50px rgba(109, 93, 252, 0.5),
+        0 10px 30px rgba(109, 93, 252, 0.35);
+}
+
+.chat-floating-logo img {
+    width: 70%;
+    height: 70%;
+    object-fit: contain;
+    border-radius: 10px;
+}
+
+/* Floating Text */
+.chat-floating-text {
+    background: linear-gradient(145deg, #6d5dfc, #4370fb);
+    color: white;
+    padding: 8px 16px;
+    border-radius: 12px;
+    font-size: 13px;
+    font-weight: 700;
+    text-align: center;
+    white-space: nowrap;
+    box-shadow: 
+        0 8px 25px rgba(109, 93, 252, 0.35),
+        inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(10px);
+    animation: textFloat 3s ease-in-out infinite;
+    margin-bottom: 5px;
+    position: relative;
+}
+
+@keyframes textFloat {
+    0%, 100% { 
+        transform: translateY(0); 
+        box-shadow: 0 8px 25px rgba(109, 93, 252, 0.35);
+    }
+    50% { 
+        transform: translateY(-5px); 
+        box-shadow: 0 15px 35px rgba(109, 93, 252, 0.5);
+    }
+}
+
+.chat-floating-text::after {
+    content: '';
+    position: absolute;
+    bottom: -8px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 0;
+    height: 0;
+    border-left: 8px solid transparent;
+    border-right: 8px solid transparent;
+    border-top: 8px solid #6d5dfc;
+}
+
+/* Floating Button - Ultra Modern Design */
+.chat-toggle-btn {
     width: 80px;
     height: 80px;
     border-radius: 24px;
@@ -53,10 +141,10 @@
         0 6px 20px rgba(109, 93, 252, 0.25),
         inset 0 1px 0 rgba(255, 255, 255, 0.25),
         0 0 0 1px rgba(255, 255, 255, 0.1);
-    z-index: 10000;
     transition: all 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
     overflow: hidden;
     backdrop-filter: blur(10px);
+    position: relative;
 }
 
 .chat-toggle-btn::before {
@@ -128,6 +216,51 @@
     letter-spacing: 0.5px;
     position: relative;
     z-index: 1;
+}
+
+/* Widget Close Button */
+.widget-close-btn {
+    position: absolute;
+    top: -12px;
+    right: -12px;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: linear-gradient(145deg, #ff6b6b, #ff4757);
+    border: none;
+    color: white;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: bold;
+    box-shadow: 
+        0 4px 15px rgba(255, 107, 107, 0.5),
+        0 0 0 2px white;
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    z-index: 10001;
+    opacity: 0.9;
+}
+
+.widget-close-btn:hover {
+    transform: rotate(90deg) scale(1.2);
+    box-shadow: 
+        0 6px 25px rgba(255, 107, 107, 0.7),
+        0 0 0 2px white;
+    opacity: 1;
+}
+
+.widget-close-btn i {
+    font-size: 10px;
+}
+
+/* Hide widget when closed */
+.chat-toggle-container.hidden {
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(20px);
+    pointer-events: none;
 }
 
 .notification-badge {
@@ -1044,9 +1177,23 @@
 
 /* Responsive Design */
 @media (max-width: 768px) {
-    .chat-toggle-btn {
+    .chat-toggle-container {
         bottom: 20px;
-        left: 25px;
+        left: 20px;
+    }
+    
+    .chat-floating-logo {
+        width: 50px;
+        height: 50px;
+        border-radius: 14px;
+    }
+    
+    .chat-floating-text {
+        font-size: 12px;
+        padding: 6px 12px;
+    }
+    
+    .chat-toggle-btn {
         width: 70px;
         height: 70px;
         border-radius: 22px;
